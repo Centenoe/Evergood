@@ -1,15 +1,59 @@
 <script lang="ts">
+    import { useConvexClient } from "convex-svelte";
+    import { api } from "$convex/_generated/api";
+    import { goto } from "$app/navigation";
     import Search from "lucide-svelte/icons/search";
     import ArrowRight from "lucide-svelte/icons/arrow-right";
     import Paperclip from "lucide-svelte/icons/paperclip";
-    import Mic from "lucide-svelte/icons/mic";
+    import ModelSelector from "$lib/components/ModelSelector.svelte";
+
+    const client = useConvexClient();
 
     let prompt = $state("");
+    let selectedModel = $state("gpt-4o");
+    let submitting = $state(false);
 
-    function handleSubmit() {
-        if (!prompt.trim()) return;
-        console.log("Submitting:", prompt);
+    async function handleSubmit() {
+        if (!prompt.trim() || submitting) return;
+
+        const userMessage = prompt.trim();
         prompt = "";
+        submitting = true;
+
+        try {
+            // 1. Create a new session
+            const sessionId = await client.mutation(api.sessions.create, {
+                model: selectedModel,
+            });
+
+            // 2. Send the first message
+            await client.mutation(api.messages.send, {
+                sessionId,
+                content: userMessage,
+                model: selectedModel,
+            });
+
+            // 3. Navigate to the chat route
+            goto(`/chat/${sessionId}`);
+
+            // 4. Trigger AI response (runs in background after navigation)
+            client.action(api.ai.chat, {
+                sessionId,
+                model: selectedModel,
+            });
+
+            // 5. Auto-generate title
+            client.action(api.ai.generateTitle, {
+                sessionId,
+            });
+        } catch (error) {
+            console.error("Failed to create chat:", error);
+            submitting = false;
+        }
+    }
+
+    function fillPrompt(text: string) {
+        prompt = text;
     }
 </script>
 
@@ -37,7 +81,8 @@
                     bind:value={prompt}
                     placeholder="Ask anything..."
                     rows="3"
-                    class="w-full bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 p-4 text-lg placeholder:text-gray-400 dark:placeholder:text-[#666]"
+                    disabled={submitting}
+                    class="w-full bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 p-4 text-lg placeholder:text-gray-400 dark:placeholder:text-[#666] disabled:opacity-50"
                     onkeydown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
@@ -48,37 +93,31 @@
 
                 <div class="flex items-center justify-between px-3 py-2 mt-2">
                     <!-- Left Action Bar -->
-                    <div class="flex items-center gap-1">
-                        <button
-                            class="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-[#2d2d2d] transition-colors"
-                            title="Attach"
-                        >
-                            <Paperclip size={20} />
-                        </button>
-                        <button
-                            class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#2d2d2d] transition-colors border border-gray-200 dark:border-[#333] rounded-full"
-                        >
-                            <Search size={16} /> Focus
-                        </button>
+                    <div class="flex items-center gap-2">
+                        <ModelSelector
+                            selected={selectedModel}
+                            onSelect={(m) => (selectedModel = m)}
+                        />
                     </div>
 
                     <!-- Right Action Bar -->
                     <div class="flex items-center gap-1">
                         <button
-                            class="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-[#2d2d2d] transition-colors"
-                            title="Voice Info"
-                        >
-                            <Mic size={20} />
-                        </button>
-                        <button
                             onclick={handleSubmit}
-                            disabled={!prompt.trim()}
-                            class="p-2 ml-1 rounded-full transition-all duration-200 shadow-sm disabled:opacity-50 {prompt.trim()
+                            disabled={!prompt.trim() || submitting}
+                            class="p-2 ml-1 rounded-full transition-all duration-200 shadow-sm disabled:opacity-50 {prompt.trim() &&
+                            !submitting
                                 ? 'bg-black text-white dark:bg-white dark:text-black hover:opacity-90'
                                 : 'bg-gray-100 text-gray-400 dark:bg-[#2d2d2d] dark:text-[#666]'}"
                             title="Submit"
                         >
-                            <ArrowRight size={20} />
+                            {#if submitting}
+                                <div
+                                    class="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"
+                                ></div>
+                            {:else}
+                                <ArrowRight size={20} />
+                            {/if}
                         </button>
                     </div>
                 </div>
@@ -89,11 +128,17 @@
             >
                 <span class="mr-2">Try asking:</span>
                 <button
+                    onclick={() =>
+                        fillPrompt(
+                            "How does SvelteKit compare to Next.js?",
+                        )}
                     class="bg-[#f0f0f0] dark:bg-[#222] hover:bg-gray-200 dark:hover:bg-[#333] transition-colors px-3 py-1.5 rounded-full border border-gray-200 dark:border-[#333]"
                 >
                     How does SvelteKit compare to Next.js?
                 </button>
                 <button
+                    onclick={() =>
+                        fillPrompt("Guide to Tailwind CSS v4")}
                     class="bg-[#f0f0f0] dark:bg-[#222] hover:bg-gray-200 dark:hover:bg-[#333] transition-colors px-3 py-1.5 rounded-full border border-gray-200 dark:border-[#333]"
                 >
                     Guide to Tailwind CSS v4

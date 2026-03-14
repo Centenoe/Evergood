@@ -1,10 +1,14 @@
 <script lang="ts">
     import { ClerkProvider, ClerkLoaded, ClerkLoading } from "svelte-clerk";
+    import { setupConvex } from "convex-svelte";
+    import { PUBLIC_CONVEX_URL } from "$env/static/public";
     import Toast from "$lib/components/Toast.svelte";
     import AuthToast from "$lib/components/AuthToast.svelte";
     import "../app.css";
 
     let { children } = $props();
+
+    setupConvex(PUBLIC_CONVEX_URL);
 </script>
 
 <ClerkProvider>
