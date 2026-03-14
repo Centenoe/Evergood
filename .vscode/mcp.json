@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+        "svelte": {
+            "url": "https://mcp.svelte.dev/mcp"
+        },
+        "clerk": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@anthropic-ai/mcp",
+                "--url",
+                "https://mcp.clerk.com"
+            ]
+        }
+    }
+}
