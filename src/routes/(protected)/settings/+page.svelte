@@ -7,6 +7,8 @@
     import Check from "lucide-svelte/icons/check";
     import X from "lucide-svelte/icons/x";
     import Brain from "lucide-svelte/icons/brain";
+    import Layers from "lucide-svelte/icons/layers";
+    import { onMount } from "svelte";
 
     const client = useConvexClient();
     const memoriesQuery = useQuery(api.memories.list, () => ({}));
@@ -19,6 +21,80 @@
     let editContent = $state("");
     let editCategory = $state("");
     let extractingSessionId = $state<string | null>(null);
+
+    // Model visibility feature
+    interface ModelInfo {
+        id: string;
+        label: string;
+        provider: string;
+        inputCostPer1M: number;
+        outputCostPer1M: number;
+    }
+    let allModels = $state<ModelInfo[]>([]);
+    let enabledModelIds = $state<Set<string>>(new Set());
+    let modelsLoading = $state(true);
+
+    const providerLabels: Record<string, string> = {
+        openai: "OpenAI",
+        anthropic: "Anthropic",
+        perplexity: "Perplexity",
+    };
+
+    let groupedModels = $derived.by(() => {
+        const groups: Record<string, ModelInfo[]> = {};
+        for (const m of allModels) {
+            if (!groups[m.provider]) groups[m.provider] = [];
+            groups[m.provider].push(m);
+        }
+        return groups;
+    });
+
+    let allChecked = $derived(allModels.length > 0 && enabledModelIds.size === allModels.length);
+    let noneChecked = $derived(enabledModelIds.size === 0);
+
+    onMount(async () => {
+        try {
+            allModels = await client.action(api.available_models.listAvailable, {});
+            // Load saved state
+            const saved = localStorage.getItem("evergood-enabled-models");
+            if (saved) {
+                try {
+                    const ids: string[] = JSON.parse(saved);
+                    enabledModelIds = new Set(ids);
+                } catch {
+                    enabledModelIds = new Set(allModels.map(m => m.id));
+                }
+            } else {
+                // All enabled by default
+                enabledModelIds = new Set(allModels.map(m => m.id));
+            }
+        } catch {
+            // Error handled — models won't load
+        } finally {
+            modelsLoading = false;
+        }
+    });
+
+    function toggleModel(modelId: string) {
+        const next = new Set(enabledModelIds);
+        if (next.has(modelId)) {
+            next.delete(modelId);
+        } else {
+            next.add(modelId);
+        }
+        enabledModelIds = next;
+        localStorage.setItem("evergood-enabled-models", JSON.stringify([...next]));
+    }
+
+    function selectAll() {
+        enabledModelIds = new Set(allModels.map(m => m.id));
+        localStorage.setItem("evergood-enabled-models", JSON.stringify([...enabledModelIds]));
+    }
+
+    function deselectAll() {
+        enabledModelIds = new Set();
+        localStorage.setItem("evergood-enabled-models", JSON.stringify([]));
+    }
 
     const categories = [
         "stack",
@@ -314,6 +390,95 @@
             <p class="text-sm text-gray-400 dark:text-gray-500">
                 No conversations to extract from yet.
             </p>
+        {/if}
+    </div>
+
+    <!-- Visible Models Section -->
+    <div
+        class="max-w-2xl border border-gray-200 dark:border-gray-800 rounded-xl p-6 mb-8"
+    >
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+                <Layers size={22} class="text-blue-500" />
+                <h2
+                    class="text-xl font-medium text-gray-900 dark:text-gray-100"
+                >
+                    Visible Models
+                </h2>
+            </div>
+            <div class="flex items-center gap-2">
+                <button
+                    onclick={selectAll}
+                    disabled={allChecked}
+                    class="px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-40 transition-colors"
+                >
+                    Select All
+                </button>
+                <button
+                    onclick={deselectAll}
+                    disabled={noneChecked}
+                    class="px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-40 transition-colors"
+                >
+                    Deselect All
+                </button>
+            </div>
+        </div>
+        <p class="text-gray-500 dark:text-gray-400 mb-6 text-sm">
+            Choose which models appear in the chat model selector. Unchecked models will be hidden.
+        </p>
+
+        {#if modelsLoading}
+            <div class="flex justify-center py-8">
+                <div
+                    class="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-transparent rounded-full animate-spin"
+                ></div>
+            </div>
+        {:else if allModels.length > 0}
+            <div class="space-y-4">
+                {#each Object.entries(groupedModels) as [provider, models]}
+                    <div>
+                        <div class="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-1">
+                            {providerLabels[provider] ?? provider}
+                        </div>
+                        <div class="space-y-1">
+                            {#each models as model}
+                                <label
+                                    class="flex items-center gap-3 bg-gray-50 dark:bg-[#1e1e1e] p-3 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#252525] transition-colors"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={enabledModelIds.has(model.id)}
+                                        onchange={() => toggleModel(model.id)}
+                                        class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 accent-blue-500"
+                                    />
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                                            {model.label}
+                                        </div>
+                                        {#if model.inputCostPer1M > 0}
+                                            <div class="text-[11px] text-gray-400 dark:text-gray-500">
+                                                ${model.inputCostPer1M.toFixed(2)} in / ${model.outputCostPer1M.toFixed(2)} out per 1M
+                                            </div>
+                                        {/if}
+                                    </div>
+                                    {#if model.id !== model.label}
+                                        <span class="text-[11px] text-gray-400 dark:text-gray-500 truncate max-w-[120px]">
+                                            {model.id}
+                                        </span>
+                                    {/if}
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {:else}
+            <div
+                class="text-center py-8 text-sm text-gray-400 dark:text-gray-500"
+            >
+                <Layers size={24} class="mx-auto mb-2 opacity-50" />
+                Could not load models. Check your API keys.
+            </div>
         {/if}
     </div>
 

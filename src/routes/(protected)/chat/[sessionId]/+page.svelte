@@ -4,10 +4,12 @@
     import { api } from "$convex/_generated/api";
     import ChatMessage from "$lib/components/ChatMessage.svelte";
     import ModelSelector from "$lib/components/ModelSelector.svelte";
+    import DebugPanel from "$lib/components/DebugPanel.svelte";
     import ArrowRight from "lucide-svelte/icons/arrow-right";
     import Search from "lucide-svelte/icons/search";
     import Globe from "lucide-svelte/icons/globe";
     import History from "lucide-svelte/icons/history";
+    import Bug from "lucide-svelte/icons/bug";
     import { tick } from "svelte";
 
     const client = useConvexClient();
@@ -35,6 +37,7 @@
     let sending = $state(false);
     let searchEnabled = $state(false);
     let searchPastChats = $state(false);
+    let debugOpen = $state(false);
     let messagesContainer: HTMLDivElement | undefined = $state(undefined);
 
     // Current model from session
@@ -47,6 +50,32 @@
     let displayMessages = $derived.by(() => {
         const msgs = messagesQuery.data ?? [];
         return msgs;
+    });
+
+    // Total session cost
+    let totalCost = $derived.by(() => {
+        let cost = 0;
+        for (const msg of displayMessages) {
+            if (msg.costUsd) cost += msg.costUsd;
+        }
+        return cost;
+    });
+
+    // Total tokens
+    let totalInputTokens = $derived.by(() => {
+        let tokens = 0;
+        for (const msg of displayMessages) {
+            if (msg.inputTokens) tokens += msg.inputTokens;
+        }
+        return tokens;
+    });
+
+    let totalOutputTokens = $derived.by(() => {
+        let tokens = 0;
+        for (const msg of displayMessages) {
+            if (msg.outputTokens) tokens += msg.outputTokens;
+        }
+        return tokens;
     });
 
     // Auto-scroll to bottom when messages change
@@ -130,17 +159,20 @@
             />
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-4">
             <!-- Search Past Chats Toggle -->
             <div class="relative group/tip">
                 <button
                     onclick={() => (searchPastChats = !searchPastChats)}
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border {searchPastChats
-                        ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                        : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-[#333] hover:bg-gray-50 dark:hover:bg-[#2a2a2a]'}"
+                    class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400"
                 >
                     <History size={14} />
-                    History{searchPastChats ? ": On" : ""}
+                    <span>History</span>
+                    <span
+                        class="toggle-switch variant-purple {searchPastChats ? 'active' : ''}"
+                        role="switch"
+                        aria-checked={searchPastChats}
+                    ></span>
                 </button>
                 <div
                     class="absolute right-0 top-full mt-2 w-56 p-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded-lg shadow-lg opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 pointer-events-none"
@@ -158,12 +190,15 @@
             <div class="relative group/tip">
                 <button
                     onclick={toggleWebSearch}
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border {searchEnabled
-                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                        : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-[#333] hover:bg-gray-50 dark:hover:bg-[#2a2a2a]'}"
+                    class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400"
                 >
                     <Globe size={14} />
-                    Search{searchEnabled ? ": On" : ""}
+                    <span>Web Search</span>
+                    <span
+                        class="toggle-switch {searchEnabled ? 'active' : ''}"
+                        role="switch"
+                        aria-checked={searchEnabled}
+                    ></span>
                 </button>
                 <div
                     class="absolute right-0 top-full mt-2 w-56 p-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded-lg shadow-lg opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 pointer-events-none"
@@ -175,52 +210,91 @@
                     </p>
                 </div>
             </div>
+
+            <!-- Debug Toggle -->
+            <button
+                onclick={() => (debugOpen = !debugOpen)}
+                class="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors {debugOpen
+                    ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                    : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'}"
+                title="Debug Panel"
+            >
+                <Bug size={14} />
+            </button>
         </div>
     </div>
 
-    <!-- Messages Area -->
-    <div
-        bind:this={messagesContainer}
-        class="flex-1 overflow-y-auto px-4 sm:px-10 py-6"
-    >
-        <div class="max-w-3xl mx-auto w-full">
-            {#if messagesQuery.isLoading}
-                <div class="flex items-center justify-center py-16">
-                    <div
-                        class="w-6 h-6 border-2 border-gray-300 dark:border-gray-600 border-t-transparent rounded-full animate-spin"
-                    ></div>
-                </div>
-            {:else if displayMessages.length === 0}
-                <div class="flex flex-col items-center justify-center py-16">
-                    <div
-                        class="w-12 h-12 bg-gray-100 dark:bg-[#2a2a2a] rounded-full flex items-center justify-center mb-4"
-                    >
-                        <Search
-                            size={20}
-                            class="text-gray-400 dark:text-gray-500"
-                        />
-                    </div>
-                    <p class="text-gray-400 dark:text-gray-500 text-sm">
-                        Send a message to get started
-                    </p>
-                </div>
-            {:else}
-                {#each displayMessages as message (message._id)}
-                    <ChatMessage
-                        role={message.role as
-                            | "user"
-                            | "assistant"
-                            | "system"}
-                        content={message.content}
-                        model={message.model}
-                        inputTokens={message.inputTokens}
-                        outputTokens={message.outputTokens}
-                        costUsd={message.costUsd}
-                        isStreaming={message.isStreaming}
-                    />
-                {/each}
-            {/if}
+    <!-- Session Cost Bar -->
+    {#if totalCost > 0}
+        <div
+            class="flex items-center justify-between px-4 py-1.5 bg-gray-50 dark:bg-[#1a1a1a] border-b border-gray-100 dark:border-[#2a2a2a] text-xs text-gray-500 dark:text-gray-400"
+        >
+            <div class="flex items-center gap-4">
+                <span>Session: <strong class="text-gray-700 dark:text-gray-300">${totalCost.toFixed(4)}</strong></span>
+                <span>{totalInputTokens.toLocaleString()} tokens in</span>
+                <span>{totalOutputTokens.toLocaleString()} tokens out</span>
+            </div>
+            <span class="text-gray-400 dark:text-gray-500">
+                {displayMessages.filter(m => m.role === "assistant" && !m.isStreaming).length} responses
+            </span>
         </div>
+    {/if}
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Messages Area -->
+        <div
+            bind:this={messagesContainer}
+            class="flex-1 overflow-y-auto px-4 sm:px-10 py-6"
+        >
+            <div class="max-w-3xl mx-auto w-full">
+                {#if messagesQuery.isLoading}
+                    <div class="flex items-center justify-center py-16">
+                        <div
+                            class="w-6 h-6 border-2 border-gray-300 dark:border-gray-600 border-t-transparent rounded-full animate-spin"
+                        ></div>
+                    </div>
+                {:else if displayMessages.length === 0}
+                    <div class="flex flex-col items-center justify-center py-16">
+                        <div
+                            class="w-12 h-12 bg-gray-100 dark:bg-[#2a2a2a] rounded-full flex items-center justify-center mb-4"
+                        >
+                            <Search
+                                size={20}
+                                class="text-gray-400 dark:text-gray-500"
+                            />
+                        </div>
+                        <p class="text-gray-400 dark:text-gray-500 text-sm">
+                            Send a message to get started
+                        </p>
+                    </div>
+                {:else}
+                    {#each displayMessages as message (message._id)}
+                        <ChatMessage
+                            role={message.role as
+                                | "user"
+                                | "assistant"
+                                | "system"}
+                            content={message.content}
+                            model={message.model}
+                            inputTokens={message.inputTokens}
+                            outputTokens={message.outputTokens}
+                            costUsd={message.costUsd}
+                            isStreaming={message.isStreaming}
+                        />
+                    {/each}
+                {/if}
+            </div>
+        </div>
+
+        <!-- Debug Panel (right side) -->
+        {#if debugOpen}
+            <DebugPanel
+                messages={displayMessages}
+                {searchPastChats}
+                {searchEnabled}
+                model={currentModel}
+            />
+        {/if}
     </div>
 
     <!-- Input Area -->

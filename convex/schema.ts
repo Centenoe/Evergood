@@ -6,6 +6,7 @@ export default defineSchema({
     title: v.string(),
     model: v.string(),
     searchEnabled: v.boolean(),
+    bookmarked: v.optional(v.boolean()),
     createdAt: v.number(),
     lastActiveAt: v.number(),
     messageCount: v.number(),

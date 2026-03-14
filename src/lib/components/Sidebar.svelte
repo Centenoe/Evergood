@@ -9,6 +9,7 @@
     import MessageSquare from "lucide-svelte/icons/message-square";
     import Search from "lucide-svelte/icons/search";
     import Trash2 from "lucide-svelte/icons/trash-2";
+    import Bookmark from "lucide-svelte/icons/bookmark";
     import X from "lucide-svelte/icons/x";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
@@ -37,21 +38,21 @@
 
     function toggleTheme() {
         theme = theme === "light" ? "dark" : "light";
-        if (theme === "dark") {
-            document.documentElement.classList.add("dark");
-        } else {
-            document.documentElement.classList.remove("dark");
-        }
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        localStorage.setItem("evergood-theme", theme);
     }
 
     onMount(() => {
-        if (
+        const stored = localStorage.getItem("evergood-theme");
+        if (stored === "dark" || stored === "light") {
+            theme = stored;
+        } else if (
             window.matchMedia &&
             window.matchMedia("(prefers-color-scheme: dark)").matches
         ) {
             theme = "dark";
-            document.documentElement.classList.add("dark");
         }
+        document.documentElement.classList.toggle("dark", theme === "dark");
     });
 
     async function createNewThread() {
@@ -70,13 +71,29 @@
         }
     }
 
-    // Group sessions by date
+    async function toggleBookmark(sessionId: string) {
+        await client.mutation(api.sessions.toggleBookmark, {
+            id: sessionId as any,
+        });
+    }
+
+    // Split sessions into bookmarked and non-bookmarked
+    let bookmarkedSessions = $derived(
+        sessionsQuery.data?.filter(s => s.bookmarked) ?? [],
+    );
+
+    let normalSessions = $derived(
+        sessionsQuery.data?.filter(s => !s.bookmarked) ?? [],
+    );
+
+    // Group non-bookmarked sessions by date
     function groupByDate(
         sessions: Array<{
             _id: string;
             title: string;
             model: string;
             lastActiveAt: number;
+            bookmarked?: boolean;
         }>,
     ) {
         const now = Date.now();
@@ -94,6 +111,7 @@
                 title: string;
                 model: string;
                 lastActiveAt: number;
+                bookmarked?: boolean;
             }>
         > = {};
 
@@ -129,9 +147,7 @@
         return "bg-gray-400";
     }
 
-    let sessionGroups = $derived(
-        sessionsQuery.data ? groupByDate(sessionsQuery.data) : {},
-    );
+    let sessionGroups = $derived(groupByDate(normalSessions));
 </script>
 
 <aside
@@ -249,6 +265,68 @@
                     ></div>
                 </div>
             {:else if sessionsQuery.data && sessionsQuery.data.length > 0}
+                <!-- Bookmarked Section -->
+                {#if bookmarkedSessions.length > 0}
+                    <div
+                        class="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-3 px-2 uppercase tracking-wide flex items-center gap-1.5"
+                    >
+                        <Bookmark size={12} />
+                        Bookmarked
+                    </div>
+                    <div class="space-y-1 mb-4">
+                        {#each bookmarkedSessions as session}
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div
+                                role="button"
+                                tabindex="0"
+                                onclick={() =>
+                                    goto(`/chat/${session._id}`)}
+                                onkeydown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') goto(`/chat/${session._id}`);
+                                }}
+                                onmouseenter={() =>
+                                    (hoveredSessionId = session._id)}
+                                onmouseleave={() =>
+                                    (hoveredSessionId = null)}
+                                class="w-full text-left px-2 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-[#e5e5e5] dark:hover:bg-[#2d2d2d] rounded-md transition-colors truncate flex items-center gap-2 group cursor-pointer {currentSessionId ===
+                                session._id
+                                    ? 'bg-[#e5e5e5] dark:bg-[#2d2d2d] font-medium text-black dark:text-white'
+                                    : ''}"
+                            >
+                                <span
+                                    class="w-2 h-2 rounded-full flex-shrink-0 {getProviderColor(session.model)}"
+                                ></span>
+                                <span class="truncate flex-1"
+                                    >{session.title}</span
+                                >
+                                {#if hoveredSessionId === session._id}
+                                    <button
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            toggleBookmark(session._id);
+                                        }}
+                                        class="flex-shrink-0 p-1 text-amber-500 hover:text-amber-600 rounded transition-colors"
+                                        title="Unbookmark"
+                                    >
+                                        <Bookmark size={14} />
+                                    </button>
+                                    <button
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            deleteSession(session._id);
+                                        }}
+                                        class="flex-shrink-0 p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                                        title="Delete"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+
+                <!-- Date-grouped sessions -->
                 {#each Object.entries(sessionGroups) as [label, sessions]}
                     <div
                         class="text-xs font-semibold text-gray-500 dark:text-[#888] mb-3 px-2 uppercase tracking-wide mt-4 first:mt-0"
@@ -282,6 +360,16 @@
                                     >{session.title}</span
                                 >
                                 {#if hoveredSessionId === session._id}
+                                    <button
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            toggleBookmark(session._id);
+                                        }}
+                                        class="flex-shrink-0 p-1 text-gray-400 hover:text-amber-500 rounded transition-colors"
+                                        title="Bookmark"
+                                    >
+                                        <Bookmark size={14} />
+                                    </button>
                                     <button
                                         onclick={(e) => {
                                             e.stopPropagation();

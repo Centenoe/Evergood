@@ -10,6 +10,8 @@ export interface AvailableModel {
   provider: "openai" | "anthropic" | "perplexity";
   maxTokens: number;
   hasPricing: boolean;
+  inputCostPer1M: number;
+  outputCostPer1M: number;
 }
 
 /**
@@ -41,6 +43,8 @@ export const listAvailable = action({
         provider: config.provider,
         maxTokens: config.maxTokens,
         hasPricing: config.inputCostPer1M > 0,
+        inputCostPer1M: config.inputCostPer1M,
+        outputCostPer1M: config.outputCostPer1M,
       });
       seen.add(id);
     }
@@ -89,6 +93,8 @@ export const listAvailable = action({
                 provider: "openai",
                 maxTokens: 128_000,
                 hasPricing: false,
+                inputCostPer1M: 0,
+                outputCostPer1M: 0,
               });
               seen.add(m.id);
             }

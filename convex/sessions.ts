@@ -102,3 +102,15 @@ export const remove = mutation({
     await ctx.db.delete(id);
   },
 });
+
+/**
+ * Toggle the bookmarked status of a session.
+ */
+export const toggleBookmark = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, { id }) => {
+    const session = await ctx.db.get(id);
+    if (!session) throw new Error("Session not found");
+    await ctx.db.patch(id, { bookmarked: !session.bookmarked });
+  },
+});

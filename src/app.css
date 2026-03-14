@@ -11,3 +11,45 @@ html, body {
   height: 100%;
   margin: 0;
 }
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background-color: #d1d5db;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+.toggle-switch.active {
+  background-color: #3b82f6;
+}
+.toggle-switch.active.variant-purple {
+  background-color: #8b5cf6;
+}
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: white;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.toggle-switch.active::after {
+  transform: translateX(16px);
+}
+:is(.dark .toggle-switch) {
+  background-color: #4b5563;
+}
+:is(.dark .toggle-switch.active) {
+  background-color: #3b82f6;
+}
+:is(.dark .toggle-switch.active.variant-purple) {
+  background-color: #8b5cf6;
+}
