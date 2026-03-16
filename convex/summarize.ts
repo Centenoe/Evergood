@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import { requireAuth } from "./auth.helpers";
 
 /**
  * Extract durable facts (memories) from a conversation using a cheap model.
@@ -9,8 +10,13 @@ import { api } from "./_generated/api";
  * Uses gpt-4o-mini to extract 0–3 facts, then upserts them into the memories table.
  */
 export const extractMemories = action({
-  args: { sessionId: v.id("sessions") },
-  handler: async (ctx, { sessionId }) => {
+  args: {
+    sessionId: v.id("sessions"),
+    spaceId: v.optional(v.id("spaces")),
+  },
+  handler: async (ctx, { sessionId, spaceId }) => {
+    await requireAuth(ctx);
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error(
@@ -108,6 +114,8 @@ Return ONLY the JSON array, no other text.`;
             category: fact.category,
             content: fact.content,
             confidence: 0.7,
+            spaceId,
+            sourceSessionId: sessionId,
           });
         }
       }

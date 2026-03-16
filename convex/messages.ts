@@ -1,22 +1,42 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { requireAuth } from "./auth.helpers";
+
+/** Helper to verify the authenticated user owns a session */
+async function verifySessionOwnership(
+  ctx: { db: { get: (id: any) => Promise<any> }; auth: { getUserIdentity: () => Promise<any> } },
+  sessionId: any,
+  userId: string
+) {
+  const session = await ctx.db.get(sessionId);
+  if (!session) throw new Error("Session not found");
+  if (session.userId && session.userId !== userId) throw new Error("Forbidden");
+  return session;
+}
 
 /**
- * Get a single message by ID.
+ * Get a single message by ID. Verifies session ownership.
  */
 export const get = query({
   args: { id: v.id("messages") },
   handler: async (ctx, { id }) => {
-    return await ctx.db.get(id);
+    const userId = await requireAuth(ctx);
+    const message = await ctx.db.get(id);
+    if (!message) return null;
+    await verifySessionOwnership(ctx, message.sessionId, userId);
+    return message;
   },
 });
 
 /**
  * List all messages for a session, ordered by timestamp ascending.
+ * Verifies the authenticated user owns the session.
  */
 export const list = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, { sessionId }) => {
+    const userId = await requireAuth(ctx);
+    await verifySessionOwnership(ctx, sessionId, userId);
     return await ctx.db
       .query("messages")
       .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
@@ -27,11 +47,13 @@ export const list = query({
 
 /**
  * Get the currently-streaming message for a session (if any).
- * The client subscribes to this for real-time token display.
+ * Verifies session ownership.
  */
 export const getStreamingMessage = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, { sessionId }) => {
+    const userId = await requireAuth(ctx);
+    await verifySessionOwnership(ctx, sessionId, userId);
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
@@ -43,6 +65,7 @@ export const getStreamingMessage = query({
 
 /**
  * Insert a user message and bump the session's activity counters.
+ * Verifies session ownership.
  */
 export const send = mutation({
   args: {
@@ -51,8 +74,11 @@ export const send = mutation({
     model: v.string(),
   },
   handler: async (ctx, { sessionId, content, model }) => {
-    const session = await ctx.db.get(sessionId);
-    if (!session) throw new Error("Session not found");
+    const userId = await requireAuth(ctx);
+    const session = await verifySessionOwnership(ctx, sessionId, userId);
+
+    if (content.length > 100_000) throw new Error("Message too long");
+    if (content.trim().length === 0) throw new Error("Message cannot be empty");
 
     const now = Date.now();
     const messageId = await ctx.db.insert("messages", {
@@ -74,6 +100,7 @@ export const send = mutation({
 
 /**
  * Create a placeholder assistant message for streaming.
+ * Verifies session ownership.
  */
 export const startStreaming = mutation({
   args: {
@@ -81,6 +108,8 @@ export const startStreaming = mutation({
     model: v.string(),
   },
   handler: async (ctx, { sessionId, model }) => {
+    const userId = await requireAuth(ctx);
+    await verifySessionOwnership(ctx, sessionId, userId);
     return await ctx.db.insert("messages", {
       sessionId,
       role: "assistant",
@@ -102,8 +131,10 @@ export const updateStreamingContent = mutation({
     contentChunk: v.string(),
   },
   handler: async (ctx, { messageId, contentChunk }) => {
+    const userId = await requireAuth(ctx);
     const message = await ctx.db.get(messageId);
     if (!message) throw new Error("Message not found");
+    await verifySessionOwnership(ctx, message.sessionId, userId);
     await ctx.db.patch(messageId, {
       content: message.content + contentChunk,
     });
@@ -112,6 +143,7 @@ export const updateStreamingContent = mutation({
 
 /**
  * Mark streaming as complete and save final metadata.
+ * Verifies session ownership.
  */
 export const finishStreaming = mutation({
   args: {
@@ -119,17 +151,29 @@ export const finishStreaming = mutation({
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
     costUsd: v.optional(v.number()),
+    citations: v.optional(v.array(v.string())),
+    searchProvider: v.optional(v.string()),
   },
-  handler: async (ctx, { messageId, inputTokens, outputTokens, costUsd }) => {
+  handler: async (ctx, { messageId, inputTokens, outputTokens, costUsd, citations, searchProvider }) => {
+    const userId = await requireAuth(ctx);
     const message = await ctx.db.get(messageId);
     if (!message) throw new Error("Message not found");
+    await verifySessionOwnership(ctx, message.sessionId, userId);
 
-    await ctx.db.patch(messageId, {
+    const patch: Record<string, unknown> = {
       isStreaming: false,
       inputTokens,
       outputTokens,
       costUsd,
-    });
+    };
+    if (citations && citations.length > 0) {
+      patch.citations = citations;
+    }
+    if (searchProvider) {
+      patch.searchProvider = searchProvider;
+    }
+
+    await ctx.db.patch(messageId, patch);
 
     // Bump session activity & message count
     const session = await ctx.db.get(message.sessionId);
@@ -144,7 +188,7 @@ export const finishStreaming = mutation({
 
 /**
  * Full-text search across all message content.
- * Uses Convex's built-in Tantivy full-text index.
+ * Filters results to only the authenticated user's sessions.
  */
 export const searchFullText = query({
   args: {
@@ -152,7 +196,14 @@ export const searchFullText = query({
     sessionId: v.optional(v.id("sessions")),
   },
   handler: async (ctx, { query: searchQuery, sessionId }) => {
-    let search = ctx.db
+    const userId = await requireAuth(ctx);
+
+    // If sessionId provided, verify ownership
+    if (sessionId) {
+      await verifySessionOwnership(ctx, sessionId, userId);
+    }
+
+    const search = ctx.db
       .query("messages")
       .withSearchIndex("search_content", (q) => {
         const base = q.search("content", searchQuery);
@@ -164,16 +215,18 @@ export const searchFullText = query({
 
     const results = await search.take(25);
 
-    // Enrich results with session info
-    const enriched = await Promise.all(
-      results.map(async (msg) => {
-        const session = await ctx.db.get(msg.sessionId);
-        return {
-          ...msg,
-          sessionTitle: session?.title ?? "Unknown",
-        };
-      })
-    );
+    // Filter results to only user's sessions and enrich with session info
+    const enriched: Array<typeof results[number] & { sessionTitle: string }> = [];
+    for (const msg of results) {
+      const session = await ctx.db.get(msg.sessionId);
+      if (!session) continue;
+      // Only include results from sessions owned by the user
+      if (session.userId && session.userId !== userId) continue;
+      enriched.push({
+        ...msg,
+        sessionTitle: session.title ?? "Unknown",
+      });
+    }
 
     return enriched;
   },
@@ -181,6 +234,7 @@ export const searchFullText = query({
 
 /**
  * Save an embedding vector to a message (called after embedding generation).
+ * Verifies session ownership.
  */
 export const saveEmbedding = mutation({
   args: {
@@ -188,6 +242,10 @@ export const saveEmbedding = mutation({
     embedding: v.array(v.float64()),
   },
   handler: async (ctx, { messageId, embedding }) => {
+    const userId = await requireAuth(ctx);
+    const message = await ctx.db.get(messageId);
+    if (!message) throw new Error("Message not found");
+    await verifySessionOwnership(ctx, message.sessionId, userId);
     await ctx.db.patch(messageId, { embedding });
   },
 });

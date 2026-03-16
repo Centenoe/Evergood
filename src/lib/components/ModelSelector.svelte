@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
     import { useConvexClient } from "convex-svelte";
     import { api } from "$convex/_generated/api";
     import ChevronDown from "lucide-svelte/icons/chevron-down";
@@ -35,14 +35,12 @@
         fetchError = null;
         try {
             const allModels = await client.action(api.available_models.listAvailable, {});
-            // Filter by user's enabled models from settings
             const enabledRaw = localStorage.getItem("evergood-enabled-models");
             if (enabledRaw) {
                 try {
                     const enabledIds: string[] = JSON.parse(enabledRaw);
                     if (Array.isArray(enabledIds) && enabledIds.length > 0) {
                         models = allModels.filter((m: { id: string }) => enabledIds.includes(m.id));
-                        // If filtering removed everything, show all
                         if (models.length === 0) models = allModels;
                     } else {
                         models = allModels;
@@ -62,15 +60,14 @@
         }
     }
 
-    // Fetch available models on mount
     onMount(() => {
         fetchModels();
     });
 
     const providerColors: Record<string, string> = {
-        openai: "bg-green-500",
-        anthropic: "bg-orange-500",
-        perplexity: "bg-blue-500",
+        openai: "bg-provider-openai",
+        anthropic: "bg-provider-anthropic",
+        perplexity: "bg-provider-perplexity",
     };
 
     const providerLabels: Record<string, string> = {
@@ -87,7 +84,6 @@
         },
     );
 
-    // Group and filter models by provider
     let filteredModels = $derived.by(() => {
         const q = searchFilter.toLowerCase();
         const filtered = q
@@ -101,9 +97,8 @@
 
         const groups: Record<string, typeof models> = {};
         for (const m of filtered) {
-            const key = m.provider;
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(m);
+            if (!groups[m.provider]) groups[m.provider] = [];
+            groups[m.provider].push(m);
         }
         return groups;
     });
@@ -128,23 +123,17 @@
 <div class="relative model-selector">
     <button
         onclick={() => (open = !open)}
-        class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2d2d2d] rounded-lg transition-colors border border-gray-200 dark:border-[#333]"
+        class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-eg-text-secondary hover:bg-eg-bg-tertiary rounded-lg transition-colors border border-eg-border"
     >
         {#if loading}
-            <span
-                class="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin"
-            ></span>
+            <span class="w-3 h-3 border border-eg-text-tertiary border-t-transparent rounded-full animate-spin"></span>
         {:else if fetchError}
-            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+            <span class="w-2 h-2 rounded-full bg-eg-danger"></span>
         {:else}
-            <span
-                class="w-2 h-2 rounded-full {providerColors[
-                    selectedModel.provider
-                ] ?? 'bg-gray-400'}"
-            ></span>
+            <span class="w-2 h-2 rounded-full {providerColors[selectedModel.provider] ?? 'bg-eg-text-tertiary'}"></span>
         {/if}
         {#if fetchError}
-            <span class="text-red-500">Error loading models</span>
+            <span class="text-eg-danger">Error loading models</span>
         {:else}
             {selectedModel.label}
         {/if}
@@ -152,92 +141,63 @@
     </button>
 
     {#if open}
-        <div
-            class="absolute top-full left-0 mt-1 w-80 bg-white dark:bg-[#1f1f1f] border border-gray-200 dark:border-[#333] rounded-xl shadow-xl z-50 overflow-hidden max-h-[400px] flex flex-col"
-        >
+        <div class="absolute top-full left-0 mt-1 w-80 bg-eg-surface border border-eg-border rounded-xl z-50 overflow-hidden max-h-[400px] flex flex-col" style="box-shadow: 0 8px 30px var(--eg-shadow);">
             {#if fetchError}
-                <!-- Error State -->
                 <div class="p-4 text-center">
-                    <div class="text-red-500 text-sm font-medium mb-1">⚠ Failed to load models</div>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">{fetchError}</p>
+                    <div class="text-eg-danger text-sm font-medium mb-1">Failed to load models</div>
+                    <p class="text-xs text-eg-text-tertiary mb-3">{fetchError}</p>
                     <button
                         onclick={() => fetchModels()}
-                        class="px-4 py-1.5 text-xs font-medium bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
+                        class="px-4 py-1.5 text-xs font-medium bg-eg-accent text-eg-accent-text rounded-lg hover:bg-eg-accent-hover transition-colors"
                     >
                         Retry
                     </button>
                 </div>
             {:else}
-                <!-- Search Input -->
-                <div class="p-2 border-b border-gray-100 dark:border-[#2a2a2a]">
+                <div class="p-2 border-b border-eg-border-subtle">
                     <div class="relative">
-                        <Search
-                            size={14}
-                            class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-                        />
+                        <Search size={14} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-eg-text-tertiary" />
                         <input
                             bind:value={searchFilter}
                             placeholder="Search models..."
-                            class="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-[#2a2a2a] rounded-lg outline-none text-gray-900 dark:text-gray-100 placeholder:text-gray-400 border border-gray-100 dark:border-[#333]"
+                            class="w-full pl-8 pr-3 py-1.5 text-sm bg-eg-bg-tertiary rounded-lg outline-none text-eg-text placeholder:text-eg-text-tertiary border border-eg-border-subtle focus:border-eg-accent"
                         />
                     </div>
                 </div>
 
-                <!-- Model List -->
                 <div class="overflow-y-auto flex-1">
                     {#each Object.entries(filteredModels) as [provider, providerModels]}
-                        <div
-                            class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-[#181818] sticky top-0"
-                        >
+                        <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-eg-text-tertiary bg-eg-bg-secondary sticky top-0">
                             {providerLabels[provider] ?? provider}
                         </div>
                         {#each providerModels as model}
                             <button
                                 onclick={() => handleSelect(model.id)}
-                                class="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-[#2a2a2a] transition-colors flex items-center gap-2.5 {model.id ===
-                                selected
-                                    ? 'bg-gray-50 dark:bg-[#2a2a2a]'
-                                    : ''}"
+                                class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''}"
                             >
-                                <span
-                                    class="w-2 h-2 rounded-full flex-shrink-0 {providerColors[
-                                        model.provider
-                                    ] ?? 'bg-gray-400'}"
-                                ></span>
+                                <span class="w-2 h-2 rounded-full flex-shrink-0 {providerColors[model.provider] ?? 'bg-eg-text-tertiary'}"></span>
                                 <div class="flex-1 min-w-0">
-                                    <div
-                                        class="font-medium text-gray-900 dark:text-gray-100 truncate"
-                                    >
-                                        {model.label}
-                                    </div>
+                                    <div class="font-medium text-eg-text truncate">{model.label}</div>
                                     {#if model.id !== model.label}
-                                        <div
-                                            class="text-[11px] text-gray-400 dark:text-gray-500 truncate"
-                                        >
-                                            {model.id}
-                                        </div>
+                                        <div class="text-[11px] text-eg-text-tertiary truncate">{model.id}</div>
                                     {/if}
                                     {#if model.inputCostPer1M > 0 || model.outputCostPer1M > 0}
-                                        <div class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                        <div class="text-[10px] text-eg-text-tertiary mt-0.5">
                                             ${model.inputCostPer1M.toFixed(2)} in / ${model.outputCostPer1M.toFixed(2)} out per 1M
                                         </div>
                                     {:else}
-                                        <div class="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5 italic">
-                                            No pricing data
-                                        </div>
+                                        <div class="text-[10px] text-eg-text-tertiary mt-0.5 italic">No pricing data</div>
                                     {/if}
                                 </div>
                                 {#if model.id === selected}
-                                    <span class="text-blue-500 text-xs">✓</span>
+                                    <span class="text-eg-accent text-xs">&#10003;</span>
                                 {/if}
                             </button>
                         {/each}
                     {/each}
 
                     {#if Object.keys(filteredModels).length === 0}
-                        <div class="px-3 py-4 text-sm text-gray-400 text-center">
-                            No matching models
-                        </div>
+                        <div class="px-3 py-4 text-sm text-eg-text-tertiary text-center">No matching models</div>
                     {/if}
                 </div>
             {/if}

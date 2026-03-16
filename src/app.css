@@ -1,15 +1,52 @@
 @import "tailwindcss";
 
 @theme {
-  --color-perplexity-bg: #f5f5f5;
-  --color-perplexity-sidebar: #e8e8e8;
-  --color-perplexity-dark: #121212;
-  --color-perplexity-dark-sidebar: #1e1e1e;
+  /* Evergood semantic tokens — driven by JS themeStore.init() */
+  --color-eg-bg: var(--eg-bg);
+  --color-eg-bg-secondary: var(--eg-bg-secondary);
+  --color-eg-bg-tertiary: var(--eg-bg-tertiary);
+  --color-eg-surface: var(--eg-surface);
+  --color-eg-text: var(--eg-text);
+  --color-eg-text-secondary: var(--eg-text-secondary);
+  --color-eg-text-tertiary: var(--eg-text-tertiary);
+  --color-eg-accent: var(--eg-accent);
+  --color-eg-accent-hover: var(--eg-accent-hover);
+  --color-eg-accent-text: var(--eg-accent-text);
+  --color-eg-border: var(--eg-border);
+  --color-eg-border-subtle: var(--eg-border-subtle);
+  --color-eg-danger: var(--eg-danger);
+  --color-eg-warning: var(--eg-warning);
+  --color-eg-success: var(--eg-success);
+  --color-eg-info: var(--eg-info);
+
+  /* Provider accent colors (static) */
+  --color-provider-openai: #10a37f;
+  --color-provider-anthropic: #d97706;
+  --color-provider-perplexity: #3b82f6;
 }
 
+/* ---- Base ---- */
 html, body {
   height: 100%;
   margin: 0;
+  background-color: var(--eg-bg);
+  color: var(--eg-text);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--eg-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--eg-text-tertiary);
+}
+
+/* Selection */
+::selection {
+  background-color: color-mix(in srgb, var(--eg-accent) 25%, transparent);
 }
 
 /* Toggle Switch */
@@ -18,16 +55,20 @@ html, body {
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background-color: #d1d5db;
+  background-color: var(--eg-border);
   cursor: pointer;
   transition: background-color 0.2s ease;
   flex-shrink: 0;
 }
 .toggle-switch.active {
-  background-color: #3b82f6;
+  background-color: var(--eg-accent);
 }
 .toggle-switch.active.variant-purple {
   background-color: #8b5cf6;
+}
+.toggle-switch.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .toggle-switch::after {
   content: '';
@@ -44,12 +85,80 @@ html, body {
 .toggle-switch.active::after {
   transform: translateX(16px);
 }
-:is(.dark .toggle-switch) {
-  background-color: #4b5563;
+
+/* Focus ring utility */
+.eg-focus-ring:focus-visible {
+  outline: 2px solid var(--eg-accent);
+  outline-offset: 2px;
 }
-:is(.dark .toggle-switch.active) {
-  background-color: #3b82f6;
+
+/* Code block wrapper */
+.code-block-wrapper {
+  position: relative;
+  margin: 0.75em 0;
 }
-:is(.dark .toggle-switch.active.variant-purple) {
-  background-color: #8b5cf6;
+
+.code-block-wrapper pre {
+  margin: 0;
+}
+
+.code-lang-label {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--eg-text-tertiary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--eg-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+  z-index: 2;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  color: var(--eg-text);
+  background: var(--eg-bg-tertiary);
+}
+
+.code-copy-btn.copied {
+  color: var(--eg-success);
+  opacity: 1;
+}
+
+/* Shiki dual-theme support */
+.shiki,
+.shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
+
+/* Shiki pre styling */
+.code-block-wrapper .shiki {
+  background: var(--eg-bg-tertiary) !important;
+  border: 1px solid var(--eg-border-subtle);
+  border-radius: 8px;
+  padding: 2em 1em 1em;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }

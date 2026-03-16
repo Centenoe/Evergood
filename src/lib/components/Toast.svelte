@@ -78,32 +78,32 @@
 
     const typeConfig = {
         success: {
-            bg: "bg-emerald-50 dark:bg-emerald-950/60",
-            border: "border-emerald-200 dark:border-emerald-800/60",
-            text: "text-emerald-900 dark:text-emerald-100",
-            bar: "bg-emerald-500",
-            iconColor: "text-emerald-500 dark:text-emerald-400",
+            bg: "bg-eg-success/10",
+            border: "border-eg-success/20",
+            text: "text-eg-text",
+            bar: "bg-eg-success",
+            iconColor: "text-eg-success",
         },
         error: {
-            bg: "bg-red-50 dark:bg-red-950/60",
-            border: "border-red-200 dark:border-red-800/60",
-            text: "text-red-900 dark:text-red-100",
-            bar: "bg-red-500",
-            iconColor: "text-red-500 dark:text-red-400",
+            bg: "bg-eg-danger/10",
+            border: "border-eg-danger/20",
+            text: "text-eg-text",
+            bar: "bg-eg-danger",
+            iconColor: "text-eg-danger",
         },
         warning: {
-            bg: "bg-amber-50 dark:bg-amber-950/60",
-            border: "border-amber-200 dark:border-amber-800/60",
-            text: "text-amber-900 dark:text-amber-100",
-            bar: "bg-amber-500",
-            iconColor: "text-amber-500 dark:text-amber-400",
+            bg: "bg-eg-warning/10",
+            border: "border-eg-warning/20",
+            text: "text-eg-text",
+            bar: "bg-eg-warning",
+            iconColor: "text-eg-warning",
         },
         info: {
-            bg: "bg-blue-50 dark:bg-blue-950/60",
-            border: "border-blue-200 dark:border-blue-800/60",
-            text: "text-blue-900 dark:text-blue-100",
-            bar: "bg-blue-500",
-            iconColor: "text-blue-500 dark:text-blue-400",
+            bg: "bg-eg-info/10",
+            border: "border-eg-info/20",
+            text: "text-eg-text",
+            bar: "bg-eg-info",
+            iconColor: "text-eg-info",
         },
     };
 </script>
@@ -154,7 +154,7 @@
                 </div>
 
                 <!-- Progress Bar -->
-                <div class="h-1 w-full bg-black/5 dark:bg-white/5">
+                <div class="h-1 w-full bg-eg-border/30">
                     <div
                         class="h-full transition-none {config.bar}"
                         style="width: {progress}%"

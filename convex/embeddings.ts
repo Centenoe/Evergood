@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, internalAction } from "./_generated/server";
 import { api } from "./_generated/api";
+import { requireAuth } from "./auth.helpers";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -53,6 +54,8 @@ export const embedMessage = action({
     messageId: v.id("messages"),
   },
   handler: async (ctx, { messageId }) => {
+    await requireAuth(ctx);
+
     // Fetch the message to get its content
     const message = await ctx.runQuery(api.messages.get, { id: messageId });
     if (!message || !message.content) return;
@@ -84,6 +87,7 @@ export const searchSimilar = action({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { queryText, excludeSessionId, limit }) => {
+    await requireAuth(ctx);
     const targetLimit = limit ?? 3;
 
     // 1. Embed the query text

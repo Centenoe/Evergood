@@ -1,31 +1,95 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { requireAuth } from "./auth.helpers";
 
 /**
- * List all memories, optionally filtered by category.
+ * List all memories for the authenticated user.
+ * - If spaceId is provided: returns memories scoped to that space.
+ * - If spaceId is undefined: returns global memories (spaceId == undefined).
+ * - If neither filter is desired, pass `all: true` to get everything.
  */
 export const list = query({
   args: {
     category: v.optional(v.string()),
+    spaceId: v.optional(v.id("spaces")),
+    all: v.optional(v.boolean()),
   },
-  handler: async (ctx, { category }) => {
-    if (category) {
-      return await ctx.db
+  handler: async (ctx, { category, spaceId, all }) => {
+    const userId = await requireAuth(ctx);
+
+    if (all) {
+      // Return all user's memories
+      const allMemories = await ctx.db
         .query("memories")
-        .withIndex("by_category", (q) => q.eq("category", category))
+        .withIndex("by_user", (q) => q.eq("userId", userId))
         .collect();
+      if (category) return allMemories.filter((m) => m.category === category);
+      return allMemories;
     }
-    return await ctx.db.query("memories").collect();
+
+    if (spaceId !== undefined) {
+      // Return memories scoped to this space
+      const spaceMemories = await ctx.db
+        .query("memories")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+        .collect();
+      const filtered = spaceMemories.filter((m) => m.userId === userId);
+      if (category) return filtered.filter((m) => m.category === category);
+      return filtered;
+    }
+
+    // Default: return global memories (no spaceId)
+    const globalMemories = await ctx.db
+      .query("memories")
+      .withIndex("by_user_global", (q) => q.eq("userId", userId).eq("spaceId", undefined))
+      .collect();
+    if (category) return globalMemories.filter((m) => m.category === category);
+    return globalMemories;
   },
 });
 
 /**
- * Get a single memory by ID.
+ * List memories relevant to a specific session.
+ * Returns global memories + space-scoped memories if the session belongs to a space.
+ */
+export const listForSession = query({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, { sessionId }) => {
+    const userId = await requireAuth(ctx);
+    const session = await ctx.db.get(sessionId);
+    if (!session || (session.userId && session.userId !== userId)) return [];
+
+    // Global memories
+    const global = await ctx.db
+      .query("memories")
+      .withIndex("by_user_global", (q) => q.eq("userId", userId).eq("spaceId", undefined))
+      .collect();
+
+    // Space-scoped memories
+    let spaceMemories: typeof global = [];
+    if (session.spaceId) {
+      const spaceMems = await ctx.db
+        .query("memories")
+        .withIndex("by_space", (q) => q.eq("spaceId", session.spaceId!))
+        .collect();
+      spaceMemories = spaceMems.filter((m) => m.userId === userId);
+    }
+
+    return { global, space: spaceMemories };
+  },
+});
+
+/**
+ * Get a single memory by ID. Verifies ownership.
  */
 export const get = query({
   args: { id: v.id("memories") },
   handler: async (ctx, { id }) => {
-    return await ctx.db.get(id);
+    const userId = await requireAuth(ctx);
+    const memory = await ctx.db.get(id);
+    if (!memory) return null;
+    if (memory.userId && memory.userId !== userId) throw new Error("Forbidden");
+    return memory;
   },
 });
 
@@ -38,13 +102,29 @@ export const upsert = mutation({
     category: v.string(),
     content: v.string(),
     confidence: v.number(),
+    spaceId: v.optional(v.id("spaces")),
+    sourceSessionId: v.optional(v.id("sessions")),
   },
-  handler: async (ctx, { category, content, confidence }) => {
-    // Look for an existing memory with a similar category
-    const existing = await ctx.db
-      .query("memories")
-      .withIndex("by_category", (q) => q.eq("category", category))
-      .collect();
+  handler: async (ctx, { category, content, confidence, spaceId, sourceSessionId }) => {
+    const userId = await requireAuth(ctx);
+
+    if (content.length > 2_000) throw new Error("Memory content too long (max 2000 chars)");
+
+    // Look for an existing memory with same category belonging to this user in the same scope
+    let existing;
+    if (spaceId) {
+      const spaceMems = await ctx.db
+        .query("memories")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+        .collect();
+      existing = spaceMems.filter((m) => m.userId === userId && m.category === category);
+    } else {
+      existing = await ctx.db
+        .query("memories")
+        .withIndex("by_user_global", (q) => q.eq("userId", userId).eq("spaceId", undefined))
+        .collect();
+      existing = existing.filter((m) => m.category === category);
+    }
 
     // Check if content is a close match (case-insensitive exact match for now)
     const match = existing.find(
@@ -62,8 +142,11 @@ export const upsert = mutation({
       return match._id;
     }
 
-    // Create new memory
+    // Create new memory with userId
     return await ctx.db.insert("memories", {
+      userId,
+      spaceId,
+      sourceSessionId,
       category,
       content,
       confidence,
@@ -74,7 +157,7 @@ export const upsert = mutation({
 });
 
 /**
- * Update a memory's content and/or confidence.
+ * Update a memory's content and/or confidence. Verifies ownership.
  */
 export const update = mutation({
   args: {
@@ -84,6 +167,13 @@ export const update = mutation({
     category: v.optional(v.string()),
   },
   handler: async (ctx, { id, content, confidence, category }) => {
+    const userId = await requireAuth(ctx);
+    const memory = await ctx.db.get(id);
+    if (!memory) throw new Error("Memory not found");
+    if (memory.userId && memory.userId !== userId) throw new Error("Forbidden");
+
+    if (content !== undefined && content.length > 2_000) throw new Error("Memory content too long (max 2000 chars)");
+
     const patch: Record<string, unknown> = {};
     if (content !== undefined) patch.content = content;
     if (confidence !== undefined) patch.confidence = confidence;
@@ -93,41 +183,58 @@ export const update = mutation({
 });
 
 /**
- * Delete a memory.
+ * Delete a memory. Verifies ownership.
  */
 export const remove = mutation({
   args: { id: v.id("memories") },
   handler: async (ctx, { id }) => {
+    const userId = await requireAuth(ctx);
+    const memory = await ctx.db.get(id);
+    if (!memory) throw new Error("Memory not found");
+    if (memory.userId && memory.userId !== userId) throw new Error("Forbidden");
     await ctx.db.delete(id);
   },
 });
 
 /**
- * Get all memories formatted as a system prompt block.
- * This is injected at the start of every conversation.
- * Returns a string ready to use as a system message content.
+ * Get all memories for the authenticated user formatted as a system prompt block.
+ * Returns global memories. If spaceId is provided, also includes space-scoped memories.
  */
 export const getSystemPromptBlock = query({
-  args: {},
-  handler: async (ctx) => {
-    const memories = await ctx.db.query("memories").collect();
+  args: {
+    spaceId: v.optional(v.id("spaces")),
+  },
+  handler: async (ctx, { spaceId }) => {
+    const userId = await requireAuth(ctx);
 
-    if (memories.length === 0) {
-      return null;
+    // Global memories
+    const globalMemories = await ctx.db
+      .query("memories")
+      .withIndex("by_user_global", (q) => q.eq("userId", userId).eq("spaceId", undefined))
+      .collect();
+
+    // Space-scoped memories
+    let spaceMemories: typeof globalMemories = [];
+    if (spaceId) {
+      const spaceMems = await ctx.db
+        .query("memories")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+        .collect();
+      spaceMemories = spaceMems.filter((m) => m.userId === userId);
     }
+
+    const allMemories = [...globalMemories, ...spaceMemories];
+    if (allMemories.length === 0) return null;
 
     // Group by category for clean formatting
     const grouped: Record<string, string[]> = {};
-    for (const m of memories) {
-      if (!grouped[m.category]) {
-        grouped[m.category] = [];
-      }
+    for (const m of allMemories) {
+      if (!grouped[m.category]) grouped[m.category] = [];
       grouped[m.category].push(m.content);
     }
 
     let block = "## User Profile & Context\n";
-    block +=
-      "The following information has been learned about the user from previous conversations.\n\n";
+    block += "The following information has been learned about the user from previous conversations.\n\n";
 
     for (const [category, items] of Object.entries(grouped)) {
       block += `### ${category}\n`;

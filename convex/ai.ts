@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { MODELS, calculateCost, makeDynamicModelConfig } from "./models";
+import { requireAuth } from "./auth.helpers";
 import type { Id } from "./_generated/dataModel";
 
 /** Minimal context type for helper functions that only need runMutation. */
@@ -25,8 +26,11 @@ export const chat = action({
     sessionId: v.id("sessions"),
     model: v.string(),
     searchPastChats: v.optional(v.boolean()),
+    searchProvider: v.optional(v.string()),
   },
-  handler: async (ctx, { sessionId, model, searchPastChats }): Promise<{ messageId: Id<"messages">; cost: number }> => {
+  handler: async (ctx, { sessionId, model, searchPastChats, searchProvider }): Promise<{ messageId: Id<"messages">; cost: number }> => {
+    await requireAuth(ctx);
+
     // Look up model config, or create a dynamic fallback for discovered models
     let modelConfig = MODELS[model];
     if (!modelConfig) {
@@ -43,10 +47,21 @@ export const chat = action({
     }
 
     // 1. Build system prompt from memories
-    const memoryBlock = await ctx.runQuery(api.memories.getSystemPromptBlock);
+    // Get session first to know the space context
+    const session = await ctx.runQuery(api.sessions.get, { id: sessionId });
+    const spaceId = session?.spaceId;
+    const memoryBlock = await ctx.runQuery(api.memories.getSystemPromptBlock, { spaceId });
     let systemContent = "You are a helpful AI assistant.";
     if (memoryBlock) {
       systemContent += "\n\n" + memoryBlock;
+    }
+
+    // 1b. Inject Space system prompt if session belongs to a Space
+    if (spaceId) {
+      const space = await ctx.runQuery(api.spaces.get, { id: spaceId });
+      if (space?.systemPrompt) {
+        systemContent += "\n\n## Space Context: " + space.name + "\n" + space.systemPrompt;
+      }
     }
 
     // 2. Fetch full conversation history
@@ -86,6 +101,53 @@ export const chat = action({
       }
     }
 
+    // 3b. Web search augmentation (if enabled)
+    let searchCitations: string[] = [];
+    if (searchProvider && searchProvider !== "off") {
+      const lastUserMessage = [...nonStreamingMessages]
+        .reverse()
+        .find((m: { role: string }) => m.role === "user");
+
+      if (lastUserMessage) {
+        try {
+          if (searchProvider === "perplexity") {
+            const searchResult = await ctx.runAction(
+              api.search.perplexity.search,
+              { query: lastUserMessage.content, model: "sonar" }
+            );
+            if (searchResult.citations.length > 0) {
+              searchCitations = searchResult.citations;
+              systemContent +=
+                "\n\n## Web Search Results (via Perplexity)\n" +
+                "Use the following web search results to inform your answer. " +
+                "Cite sources using [1], [2], etc. format.\n\n" +
+                searchResult.content;
+            }
+          } else if (searchProvider === "tavily") {
+            const searchResult = await ctx.runAction(
+              api.search.tavily.search,
+              { query: lastUserMessage.content }
+            );
+            if (searchResult.results.length > 0) {
+              searchCitations = searchResult.results.map(
+                (r: { url: string }) => r.url
+              );
+              systemContent +=
+                "\n\n## Web Search Results (via Tavily)\n" +
+                "Use the following web search results to inform your answer. " +
+                "Cite sources using [1], [2], etc. format.\n\n";
+              for (let i = 0; i < searchResult.results.length; i++) {
+                const r = searchResult.results[i];
+                systemContent += `[${i + 1}] ${r.title}\n${r.url}\n${r.content}\n\n`;
+              }
+            }
+          }
+        } catch {
+          // Silently skip if web search fails
+        }
+      }
+    }
+
     // 4. Create a streaming placeholder message
     const streamingMessageId = await ctx.runMutation(
       api.messages.startStreaming,
@@ -119,7 +181,24 @@ export const chat = action({
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         costUsd: cost,
+        citations: searchCitations.length > 0 ? searchCitations : undefined,
+        searchProvider: searchProvider && searchProvider !== "off" ? searchProvider : undefined,
       });
+
+      // 6b. Log usage for the cost dashboard
+      try {
+        await ctx.runMutation(api.usageLogs.insert, {
+          sessionId,
+          spaceId: spaceId ?? undefined,
+          model,
+          feature: searchProvider && searchProvider !== "off" ? `chat+${searchProvider}` : "chat",
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          costUsd: cost,
+        });
+      } catch {
+        // Usage logging is non-critical
+      }
 
       // 7. Schedule embedding for the user message and assistant response
       const lastUserMessage = [...nonStreamingMessages]
@@ -165,6 +244,8 @@ export const chat = action({
 export const generateTitle = action({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, { sessionId }) => {
+    await requireAuth(ctx);
+
     const messages = await ctx.runQuery(api.messages.list, { sessionId });
     const firstUserMessage = messages.find(
       (m: { role: string }) => m.role === "user"
@@ -214,6 +295,67 @@ export const generateTitle = action({
     } catch {
       // Silently fail — title generation is a nice-to-have
     }
+  },
+});
+
+/**
+ * Temp chat action — calls the LLM without writing anything to the database.
+ * Returns the full response text + token counts. No usage logging.
+ */
+export const tempChat = action({
+  args: {
+    model: v.string(),
+    messages: v.array(
+      v.object({
+        role: v.union(v.literal("user"), v.literal("assistant")),
+        content: v.string(),
+      })
+    ),
+  },
+  handler: async (
+    ctx,
+    { model, messages }
+  ): Promise<{
+    content: string;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  }> => {
+    await requireAuth(ctx);
+
+    let modelConfig = MODELS[model];
+    if (!modelConfig) {
+      if (
+        model.startsWith("gpt-") ||
+        model.startsWith("o1") ||
+        model.startsWith("o3") ||
+        model.startsWith("o4") ||
+        model.startsWith("chatgpt-")
+      ) {
+        modelConfig = makeDynamicModelConfig(model, "openai");
+      } else if (model.startsWith("claude-")) {
+        modelConfig = makeDynamicModelConfig(model, "anthropic");
+      } else if (model.startsWith("sonar")) {
+        modelConfig = makeDynamicModelConfig(model, "perplexity");
+      } else {
+        throw new Error(`Unknown model: ${model}`);
+      }
+    }
+
+    const systemContent = "You are a helpful AI assistant.";
+    const result = await callLLMNonStreaming(
+      modelConfig,
+      systemContent,
+      messages
+    );
+
+    const costUsd = calculateCost(model, result.inputTokens, result.outputTokens);
+    return {
+      content: result.content,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd,
+    };
   },
 });
 
@@ -506,4 +648,158 @@ async function processSSEStream(
   await flushBuffer();
 
   return { inputTokens, outputTokens };
+}
+
+// ─── Non-Streaming LLM Call (for temp chats) ─────────────────────────
+
+interface NonStreamingResult {
+  content: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Call the LLM without streaming. Returns the full response at once.
+ * Used by temp chats to avoid writing to the database.
+ */
+async function callLLMNonStreaming(
+  modelConfig: (typeof MODELS)[string],
+  systemContent: string,
+  chatHistory: ChatMessage[]
+): Promise<NonStreamingResult> {
+  switch (modelConfig.provider) {
+    case "anthropic":
+      return callAnthropicNonStreaming(modelConfig, systemContent, chatHistory);
+    case "openai":
+      return callOpenAINonStreaming(modelConfig, systemContent, chatHistory);
+    case "perplexity":
+      return callPerplexityNonStreaming(modelConfig, systemContent, chatHistory);
+    default:
+      throw new Error(`Unsupported provider: ${modelConfig.provider}`);
+  }
+}
+
+async function callAnthropicNonStreaming(
+  modelConfig: (typeof MODELS)[string],
+  systemContent: string,
+  chatHistory: ChatMessage[]
+): Promise<NonStreamingResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured.");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: modelConfig.apiModel,
+      max_tokens: 8192,
+      system: systemContent,
+      messages: chatHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Anthropic API error (${response.status}): ${error}`);
+  }
+
+  const data = (await response.json()) as {
+    content: Array<{ type: string; text?: string }>;
+    usage: { input_tokens: number; output_tokens: number };
+  };
+
+  const content = data.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text ?? "")
+    .join("");
+
+  return {
+    content,
+    inputTokens: data.usage?.input_tokens ?? 0,
+    outputTokens: data.usage?.output_tokens ?? 0,
+  };
+}
+
+async function callOpenAINonStreaming(
+  modelConfig: (typeof MODELS)[string],
+  systemContent: string,
+  chatHistory: ChatMessage[]
+): Promise<NonStreamingResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not configured.");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: modelConfig.apiModel,
+      messages: [
+        { role: "system", content: systemContent },
+        ...chatHistory,
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${error}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+    usage: { prompt_tokens: number; completion_tokens: number };
+  };
+
+  return {
+    content: data.choices?.[0]?.message?.content ?? "",
+    inputTokens: data.usage?.prompt_tokens ?? 0,
+    outputTokens: data.usage?.completion_tokens ?? 0,
+  };
+}
+
+async function callPerplexityNonStreaming(
+  modelConfig: (typeof MODELS)[string],
+  systemContent: string,
+  chatHistory: ChatMessage[]
+): Promise<NonStreamingResult> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) throw new Error("PERPLEXITY_API_KEY not configured.");
+
+  const response = await fetch("https://api.perplexity.ai/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: modelConfig.apiModel,
+      messages: [
+        { role: "system", content: systemContent },
+        ...chatHistory,
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Perplexity API error (${response.status}): ${error}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+    usage: { prompt_tokens: number; completion_tokens: number };
+  };
+
+  return {
+    content: data.choices?.[0]?.message?.content ?? "",
+    inputTokens: data.usage?.prompt_tokens ?? 0,
+    outputTokens: data.usage?.completion_tokens ?? 0,
+  };
 }
