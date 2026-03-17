@@ -15,7 +15,9 @@
     const client = useConvexClient();
 
     let open = $state(false);
+    let openUpward = $state(false);
     let searchFilter = $state("");
+    let triggerEl: HTMLButtonElement | undefined = $state(undefined);
     let models = $state<
         Array<{
             id: string;
@@ -109,6 +111,16 @@
         searchFilter = "";
     }
 
+    function toggleOpen() {
+        if (!open && triggerEl) {
+            const rect = triggerEl.getBoundingClientRect();
+            // 420px = max dropdown height (400) + gap (20)
+            openUpward = rect.bottom + 420 > window.innerHeight;
+        }
+        open = !open;
+        if (!open) searchFilter = "";
+    }
+
     function handleClickOutside(event: MouseEvent) {
         const target = event.target as HTMLElement;
         if (!target.closest(".model-selector")) {
@@ -122,7 +134,8 @@
 
 <div class="relative model-selector">
     <button
-        onclick={() => (open = !open)}
+        bind:this={triggerEl}
+        onclick={toggleOpen}
         class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-eg-text-secondary hover:bg-eg-bg-tertiary rounded-lg transition-colors border border-eg-border"
     >
         {#if loading}
@@ -141,7 +154,10 @@
     </button>
 
     {#if open}
-        <div class="absolute top-full left-0 mt-1 w-80 bg-eg-surface border border-eg-border rounded-xl z-50 overflow-hidden max-h-[400px] flex flex-col" style="box-shadow: 0 8px 30px var(--eg-shadow);">
+        <div
+            class="absolute {openUpward ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 w-80 bg-eg-surface border border-eg-border rounded-xl z-50 overflow-hidden max-h-[400px] flex flex-col"
+            style="box-shadow: 0 8px 30px var(--eg-shadow);"
+        >
             {#if fetchError}
                 <div class="p-4 text-center">
                     <div class="text-eg-danger text-sm font-medium mb-1">Failed to load models</div>

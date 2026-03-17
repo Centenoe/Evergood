@@ -133,76 +133,6 @@
 </script>
 
 <main class="flex-1 flex flex-col relative min-w-0 min-h-0 bg-eg-bg">
-    <!-- Toolbar -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-eg-border bg-eg-bg">
-        <div class="flex items-center gap-3">
-            <ModelSelector selected={currentModel} onSelect={handleModelChange} />
-        </div>
-
-        <div class="flex items-center gap-4">
-            <div class="relative group/tip">
-                <button onclick={() => (searchPastChats = !searchPastChats)} class="flex items-center gap-2 text-xs font-medium text-eg-text-secondary">
-                    <History size={14} />
-                    <span class="hidden sm:inline">History</span>
-                    <span class="toggle-switch variant-purple {searchPastChats ? 'active' : ''}" role="switch" aria-checked={searchPastChats}></span>
-                </button>
-                <div class="absolute right-0 top-full mt-2 w-56 p-2.5 bg-eg-surface text-eg-text text-xs rounded-lg shadow-lg opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 pointer-events-none border border-eg-border">
-                    <p class="font-medium mb-1">Recall Past Conversations</p>
-                    <p class="text-eg-text-secondary leading-relaxed">When enabled, the AI searches your previous chats for relevant context.</p>
-                </div>
-            </div>
-
-            <div class="relative group/tip">
-                <button onclick={() => { if (hasAnySearch) searchDropdownOpen = !searchDropdownOpen; }} disabled={!hasAnySearch} class="flex items-center gap-2 text-xs font-medium {hasAnySearch ? 'text-eg-text-secondary' : 'text-eg-text-tertiary cursor-not-allowed'}">
-                    <Globe size={14} />
-                    <span class="hidden sm:inline">Web</span>
-                    {#if searchProvider !== "off"}
-                        <span class="px-1.5 py-0.5 bg-eg-accent/15 text-eg-accent rounded text-[10px] font-semibold uppercase">{searchProvider}</span>
-                    {:else}
-                        <span class="toggle-switch {!hasAnySearch ? 'disabled' : ''}" role="switch" aria-checked={false}></span>
-                    {/if}
-                    {#if hasAnySearch}
-                        <ChevronDown size={12} class="text-eg-text-tertiary" />
-                    {/if}
-                </button>
-
-                {#if searchDropdownOpen}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div class="fixed inset-0 z-40" onclick={() => (searchDropdownOpen = false)}></div>
-                    <div class="absolute right-0 top-full mt-2 w-48 bg-eg-surface border border-eg-border rounded-lg shadow-lg z-50 py-1">
-                        <button onclick={() => selectSearchProvider("off")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'off' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
-                            Off
-                        </button>
-                        {#if providers.perplexity}
-                            <button onclick={() => selectSearchProvider("perplexity")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'perplexity' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
-                                <span class="w-2 h-2 rounded-full bg-provider-perplexity"></span>
-                                Perplexity
-                            </button>
-                        {/if}
-                        {#if providers.tavily}
-                            <button onclick={() => selectSearchProvider("tavily")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'tavily' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
-                                <span class="w-2 h-2 rounded-full bg-eg-accent"></span>
-                                Tavily
-                            </button>
-                        {/if}
-                    </div>
-                {/if}
-
-                {#if !hasAnySearch && !searchDropdownOpen}
-                    <div class="absolute right-0 top-full mt-2 w-56 p-2.5 bg-eg-surface text-eg-text text-xs rounded-lg shadow-lg opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 pointer-events-none border border-eg-border">
-                        <p class="font-medium mb-1">Web Search Unavailable</p>
-                        <p class="text-eg-text-secondary leading-relaxed">Add PERPLEXITY_API_KEY or TAVILY_API_KEY to Convex to enable.</p>
-                    </div>
-                {/if}
-            </div>
-
-            <button onclick={() => (debugOpen = !debugOpen)} class="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors {debugOpen ? 'bg-eg-warning/15 text-eg-warning' : 'text-eg-text-tertiary hover:text-eg-text-secondary'}" title="Debug Panel">
-                <Bug size={14} />
-            </button>
-        </div>
-    </div>
-
     {#if totalCost > 0}
         <div class="flex items-center justify-between px-4 py-1.5 bg-eg-bg-secondary border-b border-eg-border-subtle">
             <TokenCostBar inputText="" model={currentModel} {totalCost} {totalInputTokens} {totalOutputTokens} />
@@ -262,7 +192,75 @@
                 disabled={sending}
                 {isStreaming}
                 onsubmit={handleSubmit}
-            />
+            >
+                {#snippet actions()}
+                    <ModelSelector selected={currentModel} onSelect={handleModelChange} />
+
+                    <!-- History toggle -->
+                    <button
+                        onclick={() => (searchPastChats = !searchPastChats)}
+                        class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
+                            {searchPastChats ? 'bg-eg-accent/15 text-eg-accent' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                        title="Search past conversations for context"
+                    >
+                        <History size={14} />
+                        <span class="hidden sm:inline">History</span>
+                    </button>
+
+                    <!-- Web search toggle -->
+                    <div class="relative">
+                        <button
+                            onclick={() => { if (hasAnySearch) searchDropdownOpen = !searchDropdownOpen; }}
+                            disabled={!hasAnySearch}
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
+                                {searchProvider !== 'off' ? 'bg-eg-accent/15 text-eg-accent' : hasAnySearch ? 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary' : 'text-eg-text-tertiary opacity-40 cursor-not-allowed'}"
+                            title={hasAnySearch ? "Web search" : "Add PERPLEXITY_API_KEY or TAVILY_API_KEY to enable"}
+                        >
+                            <Globe size={14} />
+                            <span class="hidden sm:inline">Web</span>
+                            {#if searchProvider !== "off"}
+                                <span class="text-[10px] uppercase">{searchProvider}</span>
+                            {/if}
+                            {#if hasAnySearch}
+                                <ChevronDown size={12} />
+                            {/if}
+                        </button>
+
+                        {#if searchDropdownOpen}
+                            <!-- svelte-ignore a11y_click_events_have_key_events -->
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div class="fixed inset-0 z-40" onclick={() => (searchDropdownOpen = false)}></div>
+                            <div class="absolute bottom-full left-0 mb-2 w-48 bg-eg-surface border border-eg-border rounded-xl shadow-lg z-50 py-1" style="box-shadow: 0 8px 30px rgba(0,0,0,0.3);">
+                                <button onclick={() => selectSearchProvider("off")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'off' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
+                                    Off
+                                </button>
+                                {#if providers.perplexity}
+                                    <button onclick={() => selectSearchProvider("perplexity")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'perplexity' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
+                                        <span class="w-2 h-2 rounded-full bg-provider-perplexity"></span>
+                                        Perplexity
+                                    </button>
+                                {/if}
+                                {#if providers.tavily}
+                                    <button onclick={() => selectSearchProvider("tavily")} class="w-full px-3 py-2 text-left text-xs hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2 {searchProvider === 'tavily' ? 'text-eg-accent font-medium' : 'text-eg-text-secondary'}">
+                                        <span class="w-2 h-2 rounded-full bg-eg-accent"></span>
+                                        Tavily
+                                    </button>
+                                {/if}
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- Debug toggle -->
+                    <button
+                        onclick={() => (debugOpen = !debugOpen)}
+                        class="flex items-center gap-1 p-1.5 text-xs font-medium rounded-lg transition-colors
+                            {debugOpen ? 'bg-eg-warning/15 text-eg-warning' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                        title="Debug Panel"
+                    >
+                        <Bug size={14} />
+                    </button>
+                {/snippet}
+            </ChatInput>
             <div class="mt-1.5 px-1">
                 <TokenCostBar inputText={prompt} model={currentModel} {totalCost} {totalInputTokens} {totalOutputTokens} />
             </div>

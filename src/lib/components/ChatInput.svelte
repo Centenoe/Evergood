@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import ArrowUp from "lucide-svelte/icons/arrow-up";
+    import Plus from "lucide-svelte/icons/plus";
 
     interface Props {
         value: string;
@@ -8,6 +9,7 @@
         disabled?: boolean;
         isStreaming?: boolean;
         onsubmit: () => void;
+        onAttach?: () => void;
         actions?: Snippet;
     }
 
@@ -17,10 +19,13 @@
         disabled = false,
         isStreaming = false,
         onsubmit,
+        onAttach,
         actions,
     }: Props = $props();
 
     let textareaEl: HTMLTextAreaElement | undefined = $state(undefined);
+
+    let canSend = $derived(value.trim().length > 0 && !disabled && !isStreaming);
 
     function autoResize() {
         if (!textareaEl) return;
@@ -39,16 +44,17 @@
 </script>
 
 <div
-    class="bg-eg-surface border border-eg-border hover:border-eg-text-tertiary transition-colors rounded-2xl flex flex-col focus-within:ring-2 focus-within:ring-[var(--eg-ring)] focus-within:border-eg-accent p-1"
-    style="box-shadow: 0 2px 12px var(--eg-shadow);"
+    class="bg-eg-surface border border-eg-border rounded-2xl flex flex-col transition-colors focus-within:border-eg-text-tertiary"
+    style="box-shadow: 0 4px 24px rgba(0,0,0,0.25);"
 >
+    <!-- Textarea -->
     <textarea
         bind:this={textareaEl}
         bind:value
         {placeholder}
         rows="1"
         disabled={disabled || isStreaming}
-        class="w-full bg-transparent resize-none outline-none text-eg-text p-4 text-[15px] placeholder:text-eg-text-tertiary disabled:opacity-50"
+        class="w-full bg-transparent resize-none outline-none text-eg-text px-4 pt-4 pb-2 text-[15px] leading-relaxed placeholder:text-eg-text-tertiary disabled:opacity-50"
         oninput={autoResize}
         onkeydown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -58,26 +64,39 @@
         }}
     ></textarea>
 
-    <div class="flex items-center justify-between px-3 py-2">
-        <div class="flex items-center gap-2 text-xs text-eg-text-tertiary">
-            {#if isStreaming}
-                <span class="flex items-center gap-1.5">
-                    <span class="w-2 h-2 bg-eg-success rounded-full animate-pulse"></span>
-                    Streaming...
-                </span>
-            {/if}
+    <!-- Bottom action bar -->
+    <div class="flex items-center justify-between px-3 pb-3 pt-1">
+        <!-- Left: attach button -->
+        <div class="flex items-center">
+            <button
+                onclick={() => onAttach?.()}
+                class="w-8 h-8 flex items-center justify-center rounded-full text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary transition-colors"
+                title="Attach file"
+            >
+                <Plus size={18} />
+            </button>
         </div>
 
-        <div class="flex items-center gap-2">
+        <!-- Right: actions (model selector, toggles) + send -->
+        <div class="flex items-center gap-1.5">
+            {#if isStreaming}
+                <span class="flex items-center gap-1.5 text-xs text-eg-text-tertiary mr-2">
+                    <span class="w-2 h-2 bg-eg-success rounded-full animate-pulse"></span>
+                    Streaming
+                </span>
+            {/if}
+
             {#if actions}
                 {@render actions()}
             {/if}
+
             <button
                 onclick={onsubmit}
-                disabled={!value.trim() || disabled || isStreaming}
-                class="p-2 rounded-full transition-all duration-200 disabled:opacity-30 {value.trim() && !disabled && !isStreaming
+                disabled={!canSend}
+                class="w-8 h-8 flex items-center justify-center rounded-full transition-all duration-200 ml-1
+                    {canSend
                     ? 'bg-eg-accent text-eg-accent-text hover:bg-eg-accent-hover'
-                    : 'bg-eg-bg-tertiary text-eg-text-tertiary'}"
+                    : 'bg-eg-bg-tertiary text-eg-text-tertiary opacity-40'}"
                 title="Send (Enter)"
             >
                 <ArrowUp size={18} />
