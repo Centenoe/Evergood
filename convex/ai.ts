@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
-import { MODELS, calculateCost, makeDynamicModelConfig } from "./models";
+import { inferModelRouting, calculateCost } from "./models";
+import type { ModelRouting, OraclePricing } from "./models";
 import { requireAuth } from "./auth.helpers";
 import type { Id } from "./_generated/dataModel";
 
@@ -31,20 +32,8 @@ export const chat = action({
   handler: async (ctx, { sessionId, model, searchPastChats, searchProvider }): Promise<{ messageId: Id<"messages">; cost: number }> => {
     await requireAuth(ctx);
 
-    // Look up model config, or create a dynamic fallback for discovered models
-    let modelConfig = MODELS[model];
-    if (!modelConfig) {
-      // Try to infer the provider from the model ID
-      if (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.startsWith("o4") || model.startsWith("chatgpt-")) {
-        modelConfig = makeDynamicModelConfig(model, "openai");
-      } else if (model.startsWith("claude-")) {
-        modelConfig = makeDynamicModelConfig(model, "anthropic");
-      } else if (model.startsWith("sonar")) {
-        modelConfig = makeDynamicModelConfig(model, "perplexity");
-      } else {
-        throw new Error(`Unknown model: ${model}`);
-      }
-    }
+    // Infer provider routing from the model ID
+    const modelRouting = inferModelRouting(model);
 
     // 1. Build system prompt from memories
     // Get session first to know the space context
@@ -158,7 +147,7 @@ export const chat = action({
     try {
       const result = await callLLM(
         ctx,
-        modelConfig,
+        modelRouting,
         systemContent,
         nonStreamingMessages.map(
           (m: { role: string; content: string }) => ({
@@ -170,11 +159,31 @@ export const chat = action({
         model
       );
 
-      // 6. Finish streaming with metadata
+      // 6. Snapshot-on-write: lookup Oracle pricing, calculate cost, save to message
+      let oraclePricing: OraclePricing | null = null;
+      try {
+        const pricingRow = await ctx.runQuery(api.pricing.getModelPricing, { modelId: model });
+        if (pricingRow) {
+          oraclePricing = {
+            prompt: pricingRow.prompt,
+            completion: pricingRow.completion,
+            input_cache_read: pricingRow.input_cache_read ?? undefined,
+            input_cache_write: pricingRow.input_cache_write ?? undefined,
+            web_search: pricingRow.web_search ?? undefined,
+          };
+        }
+      } catch {
+        // Pricing lookup failure is non-critical — fallback to hardcoded
+      }
+
       const cost = calculateCost(
-        model,
         result.inputTokens,
-        result.outputTokens
+        result.outputTokens,
+        oraclePricing,
+        {
+          cacheReadTokens: result.cacheReadTokens,
+          cacheWriteTokens: result.cacheWriteTokens,
+        }
       );
       await ctx.runMutation(api.messages.finishStreaming, {
         messageId: streamingMessageId,
@@ -323,33 +332,32 @@ export const tempChat = action({
   }> => {
     await requireAuth(ctx);
 
-    let modelConfig = MODELS[model];
-    if (!modelConfig) {
-      if (
-        model.startsWith("gpt-") ||
-        model.startsWith("o1") ||
-        model.startsWith("o3") ||
-        model.startsWith("o4") ||
-        model.startsWith("chatgpt-")
-      ) {
-        modelConfig = makeDynamicModelConfig(model, "openai");
-      } else if (model.startsWith("claude-")) {
-        modelConfig = makeDynamicModelConfig(model, "anthropic");
-      } else if (model.startsWith("sonar")) {
-        modelConfig = makeDynamicModelConfig(model, "perplexity");
-      } else {
-        throw new Error(`Unknown model: ${model}`);
-      }
-    }
+    const modelRouting = inferModelRouting(model);
 
     const systemContent = "You are a helpful AI assistant.";
     const result = await callLLMNonStreaming(
-      modelConfig,
+      modelRouting,
       systemContent,
       messages
     );
 
-    const costUsd = calculateCost(model, result.inputTokens, result.outputTokens);
+    let oraclePricing: OraclePricing | null = null;
+    try {
+      const pricingRow = await ctx.runQuery(api.pricing.getModelPricing, { modelId: model });
+      if (pricingRow) {
+        oraclePricing = {
+          prompt: pricingRow.prompt,
+          completion: pricingRow.completion,
+          input_cache_read: pricingRow.input_cache_read ?? undefined,
+          input_cache_write: pricingRow.input_cache_write ?? undefined,
+          web_search: pricingRow.web_search ?? undefined,
+        };
+      }
+    } catch {
+      // Non-critical
+    }
+
+    const costUsd = calculateCost(result.inputTokens, result.outputTokens, oraclePricing);
     return {
       content: result.content,
       inputTokens: result.inputTokens,
@@ -364,6 +372,8 @@ export const tempChat = action({
 interface LLMResult {
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 interface ChatMessage {
@@ -376,7 +386,7 @@ interface ChatMessage {
  */
 async function callLLM(
   ctx: RunMutationCtx,
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[],
   streamingMessageId: string,
@@ -417,7 +427,7 @@ async function callLLM(
  */
 async function callAnthropic(
   ctx: RunMutationCtx,
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[],
   streamingMessageId: string
@@ -463,7 +473,7 @@ async function callAnthropic(
  */
 async function callOpenAI(
   ctx: RunMutationCtx,
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[],
   streamingMessageId: string
@@ -508,7 +518,7 @@ async function callOpenAI(
  */
 async function callPerplexity(
   ctx: RunMutationCtx,
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[],
   streamingMessageId: string
@@ -572,6 +582,8 @@ async function processSSEStream(
   let contentBuffer = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
 
   // Batch writes: flush every ~200ms or 50 chars
   const BATCH_CHAR_THRESHOLD = 50;
@@ -613,7 +625,11 @@ async function processSSEStream(
             } else if (parsed.type === "message_delta") {
               outputTokens = parsed.usage?.output_tokens || outputTokens;
             } else if (parsed.type === "message_start") {
-              inputTokens = parsed.message?.usage?.input_tokens || 0;
+              const usage = parsed.message?.usage;
+              inputTokens = usage?.input_tokens || 0;
+              // Anthropic cache token fields
+              cacheReadTokens = usage?.cache_read_input_tokens || 0;
+              cacheWriteTokens = usage?.cache_creation_input_tokens || 0;
             }
           } else {
             // OpenAI / Perplexity format
@@ -625,6 +641,10 @@ async function processSSEStream(
             if (parsed.usage) {
               inputTokens = parsed.usage.prompt_tokens || 0;
               outputTokens = parsed.usage.completion_tokens || 0;
+              // OpenAI cache tokens (if present)
+              if (parsed.usage.prompt_tokens_details) {
+                cacheReadTokens = parsed.usage.prompt_tokens_details.cached_tokens || 0;
+              }
             }
           }
         } catch {
@@ -647,7 +667,12 @@ async function processSSEStream(
   // Final flush
   await flushBuffer();
 
-  return { inputTokens, outputTokens };
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined,
+    cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined,
+  };
 }
 
 // ─── Non-Streaming LLM Call (for temp chats) ─────────────────────────
@@ -663,7 +688,7 @@ interface NonStreamingResult {
  * Used by temp chats to avoid writing to the database.
  */
 async function callLLMNonStreaming(
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[]
 ): Promise<NonStreamingResult> {
@@ -680,7 +705,7 @@ async function callLLMNonStreaming(
 }
 
 async function callAnthropicNonStreaming(
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[]
 ): Promise<NonStreamingResult> {
@@ -725,7 +750,7 @@ async function callAnthropicNonStreaming(
 }
 
 async function callOpenAINonStreaming(
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[]
 ): Promise<NonStreamingResult> {
@@ -765,7 +790,7 @@ async function callOpenAINonStreaming(
 }
 
 async function callPerplexityNonStreaming(
-  modelConfig: (typeof MODELS)[string],
+  modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[]
 ): Promise<NonStreamingResult> {

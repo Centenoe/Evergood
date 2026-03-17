@@ -4,18 +4,20 @@
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
- * To regenerate, run `npx convex dev`.
+ * To regenerate, run `pnpm convex dev`.
  * @module
  */
 
 import type * as ai from "../ai.js";
 import type * as available_models from "../available_models.js";
+import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as embeddings from "../embeddings.js";
 import type * as http from "../http.js";
 import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
 import type * as models from "../models.js";
+import type * as pricing from "../pricing.js";
 import type * as providers from "../providers.js";
 import type * as research from "../research.js";
 import type * as search_perplexity from "../search/perplexity.js";
@@ -34,12 +36,14 @@ import type {
 declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   available_models: typeof available_models;
+  crons: typeof crons;
   dashboard: typeof dashboard;
   embeddings: typeof embeddings;
   http: typeof http;
   memories: typeof memories;
   messages: typeof messages;
   models: typeof models;
+  pricing: typeof pricing;
   providers: typeof providers;
   research: typeof research;
   "search/perplexity": typeof search_perplexity;

@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { useQuery } from "convex-svelte";
+    import { api } from "$convex/_generated/api";
     import { estimateTokens } from "$lib/utils/tokenEstimator";
     import { estimateCost } from "$lib/utils/costCalculator";
 
@@ -12,8 +14,11 @@
 
     let { inputText, model, totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0 }: Props = $props();
 
+    const pricingQuery = useQuery(api.pricing.listAllPricing, () => ({}));
+    let oraclePricing = $derived(pricingQuery.data ?? null);
+
     let estimatedInputTokens = $derived(estimateTokens(inputText));
-    let estimatedMessageCost = $derived(estimateCost(model, estimatedInputTokens, 0));
+    let estimatedMessageCost = $derived(estimateCost(model, estimatedInputTokens, 0, oraclePricing));
 
     function formatCost(cost: number): string {
         if (cost === 0) return "$0.00";

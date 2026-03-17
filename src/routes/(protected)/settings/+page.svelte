@@ -67,7 +67,7 @@
 
     onMount(async () => {
         try {
-            allModels = await client.action(api.available_models.listAvailable, {});
+            allModels = await client.query(api.available_models.listAvailable, {});
             const saved = localStorage.getItem("evergood-enabled-models");
             if (saved) {
                 try {

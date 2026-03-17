@@ -93,4 +93,17 @@ export default defineSchema({
     .index("by_user_feature", ["userId", "feature"])
     .index("by_session", ["sessionId"])
     .index("by_space", ["spaceId"]),
+
+  modelPricing: defineTable({
+    modelId: v.string(),
+    name: v.optional(v.string()),
+    maxTokens: v.optional(v.number()),
+    isActive: v.optional(v.boolean()),
+    prompt: v.number(),
+    completion: v.number(),
+    input_cache_read: v.optional(v.number()),
+    input_cache_write: v.optional(v.number()),
+    web_search: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_model", ["modelId"]),
 });

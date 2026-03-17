@@ -1,174 +1,108 @@
 /**
- * Model configuration — maps model IDs to API details and pricing.
+ * Model utilities — provider inference and cost calculation.
  *
- * Models are keyed by their actual API model ID so the user sees
- * exactly what they're using. The frontend fetches the full list
- * and groups by provider.
+ * All model data (names, pricing, context lengths) now lives in the
+ * Convex `modelPricing` table, populated by the OpenRouter pricing oracle.
+ * This file provides lightweight helpers for routing and cost math.
  */
 
-export interface ModelConfig {
-  provider: "anthropic" | "openai" | "perplexity";
+/** Provider type supported by the app */
+export type Provider = "anthropic" | "openai" | "perplexity" | "google";
+
+/**
+ * Minimal config needed to route an API call to the correct provider.
+ * No pricing — that comes from the database.
+ */
+export interface ModelRouting {
+  provider: Provider;
   apiModel: string;
-  label: string;
-  maxTokens: number;
-  /** Cost per 1M input tokens in USD */
-  inputCostPer1M: number;
-  /** Cost per 1M output tokens in USD */
-  outputCostPer1M: number;
 }
 
 /**
- * Known models with pricing. These are the "curated" defaults.
- * Dynamic models fetched from the OpenAI API will be merged in at runtime.
+ * Infer the provider and API model ID from an OpenRouter-style model ID.
+ * OpenRouter IDs follow the format "provider/model-name".
  */
-export const MODELS: Record<string, ModelConfig> = {
-  // ── OpenAI ──
-  "gpt-4o": {
-    provider: "openai",
-    apiModel: "gpt-4o",
-    label: "GPT-4o",
-    maxTokens: 128_000,
-    inputCostPer1M: 2.5,
-    outputCostPer1M: 10.0,
-  },
-  "gpt-4o-mini": {
-    provider: "openai",
-    apiModel: "gpt-4o-mini",
-    label: "GPT-4o Mini",
-    maxTokens: 128_000,
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.6,
-  },
-  "gpt-4.1": {
-    provider: "openai",
-    apiModel: "gpt-4.1",
-    label: "GPT-4.1",
-    maxTokens: 1_047_576,
-    inputCostPer1M: 2.0,
-    outputCostPer1M: 8.0,
-  },
-  "gpt-4.1-mini": {
-    provider: "openai",
-    apiModel: "gpt-4.1-mini",
-    label: "GPT-4.1 Mini",
-    maxTokens: 1_047_576,
-    inputCostPer1M: 0.4,
-    outputCostPer1M: 1.6,
-  },
-  "gpt-4.1-nano": {
-    provider: "openai",
-    apiModel: "gpt-4.1-nano",
-    label: "GPT-4.1 Nano",
-    maxTokens: 1_047_576,
-    inputCostPer1M: 0.1,
-    outputCostPer1M: 0.4,
-  },
-  "o4-mini": {
-    provider: "openai",
-    apiModel: "o4-mini",
-    label: "o4 Mini",
-    maxTokens: 200_000,
-    inputCostPer1M: 1.1,
-    outputCostPer1M: 4.4,
-  },
-  "o3": {
-    provider: "openai",
-    apiModel: "o3",
-    label: "o3",
-    maxTokens: 200_000,
-    inputCostPer1M: 2.0,
-    outputCostPer1M: 8.0,
-  },
-  "o3-mini": {
-    provider: "openai",
-    apiModel: "o3-mini",
-    label: "o3 Mini",
-    maxTokens: 200_000,
-    inputCostPer1M: 1.1,
-    outputCostPer1M: 4.4,
-  },
+export function inferModelRouting(modelId: string): ModelRouting {
+  const slashIndex = modelId.indexOf("/");
+  if (slashIndex > 0) {
+    const prefix = modelId.slice(0, slashIndex);
+    const apiModel = modelId.slice(slashIndex + 1);
 
-  // ── Anthropic ──
-  "claude-sonnet-4-20250514": {
-    provider: "anthropic",
-    apiModel: "claude-sonnet-4-20250514",
-    label: "Claude Sonnet 4",
-    maxTokens: 200_000,
-    inputCostPer1M: 3.0,
-    outputCostPer1M: 15.0,
-  },
-  "claude-opus-4-20250514": {
-    provider: "anthropic",
-    apiModel: "claude-opus-4-20250514",
-    label: "Claude Opus 4",
-    maxTokens: 200_000,
-    inputCostPer1M: 15.0,
-    outputCostPer1M: 75.0,
-  },
-  "claude-3-5-sonnet-20241022": {
-    provider: "anthropic",
-    apiModel: "claude-3-5-sonnet-20241022",
-    label: "Claude 3.5 Sonnet",
-    maxTokens: 200_000,
-    inputCostPer1M: 3.0,
-    outputCostPer1M: 15.0,
-  },
-  "claude-3-5-haiku-20241022": {
-    provider: "anthropic",
-    apiModel: "claude-3-5-haiku-20241022",
-    label: "Claude 3.5 Haiku",
-    maxTokens: 200_000,
-    inputCostPer1M: 0.8,
-    outputCostPer1M: 4.0,
-  },
+    const providerMap: Record<string, Provider> = {
+      openai: "openai",
+      anthropic: "anthropic",
+      perplexity: "perplexity",
+      google: "google",
+    };
 
-  // ── Perplexity ──
-  "sonar-pro": {
-    provider: "perplexity",
-    apiModel: "sonar-pro",
-    label: "Sonar Pro",
-    maxTokens: 127_072,
-    inputCostPer1M: 3.0,
-    outputCostPer1M: 15.0,
-  },
-  "sonar": {
-    provider: "perplexity",
-    apiModel: "sonar",
-    label: "Sonar",
-    maxTokens: 127_072,
-    inputCostPer1M: 1.0,
-    outputCostPer1M: 1.0,
-  },
-};
+    const provider = providerMap[prefix];
+    if (provider) {
+      return { provider, apiModel };
+    }
+  }
 
-/** Calculate cost in USD from token counts */
+  // Fallback: try to guess from the model name itself
+  if (modelId.startsWith("claude-")) return { provider: "anthropic", apiModel: modelId };
+  if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3") || modelId.startsWith("o4") || modelId.startsWith("chatgpt-"))
+    return { provider: "openai", apiModel: modelId };
+  if (modelId.startsWith("sonar")) return { provider: "perplexity", apiModel: modelId };
+  if (modelId.startsWith("gemini")) return { provider: "google", apiModel: modelId };
+
+  // Default to openai if we truly can't tell
+  return { provider: "openai", apiModel: modelId };
+}
+
+/**
+ * Pricing data from the modelPricing table (per-token prices).
+ */
+export interface OraclePricing {
+  prompt: number;
+  completion: number;
+  input_cache_read?: number;
+  input_cache_write?: number;
+  web_search?: number;
+}
+
+/**
+ * Calculate cost using Oracle pricing from the modelPricing table.
+ * Supports cache token breakdowns (Anthropic cache_read/cache_write, OpenAI cached_tokens).
+ * Returns 0 if no pricing data is available.
+ */
 export function calculateCost(
-  model: string,
   inputTokens: number,
-  outputTokens: number
+  outputTokens: number,
+  oraclePricing: OraclePricing | null,
+  cacheTokens?: {
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  }
 ): number {
-  const config = MODELS[model];
-  if (!config) return 0;
-  return (
-    (inputTokens / 1_000_000) * config.inputCostPer1M +
-    (outputTokens / 1_000_000) * config.outputCostPer1M
-  );
-}
+  if (!oraclePricing) return 0;
 
-/**
- * Get a fallback ModelConfig for a model that was discovered dynamically
- * (e.g. from the OpenAI /v1/models endpoint) but isn't in our curated list.
- */
-export function makeDynamicModelConfig(
-  modelId: string,
-  provider: "openai" | "anthropic" | "perplexity"
-): ModelConfig {
-  return {
-    provider,
-    apiModel: modelId,
-    label: modelId,
-    maxTokens: 128_000,
-    inputCostPer1M: 0,
-    outputCostPer1M: 0,
-  };
+  let cost = 0;
+
+  const cachedRead = cacheTokens?.cacheReadTokens ?? 0;
+  const cachedWrite = cacheTokens?.cacheWriteTokens ?? 0;
+  const regularInputTokens = Math.max(0, inputTokens - cachedRead - cachedWrite);
+
+  cost += regularInputTokens * oraclePricing.prompt;
+
+  // Cache read tokens (cheaper than regular input)
+  if (cachedRead > 0 && oraclePricing.input_cache_read != null) {
+    cost += cachedRead * oraclePricing.input_cache_read;
+  } else {
+    cost += cachedRead * oraclePricing.prompt;
+  }
+
+  // Cache write tokens (often more expensive than regular input)
+  if (cachedWrite > 0 && oraclePricing.input_cache_write != null) {
+    cost += cachedWrite * oraclePricing.input_cache_write;
+  } else {
+    cost += cachedWrite * oraclePricing.prompt;
+  }
+
+  // Output/completion tokens
+  cost += outputTokens * oraclePricing.completion;
+
+  return cost;
 }

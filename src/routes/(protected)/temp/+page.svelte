@@ -10,7 +10,6 @@
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
 	import { tick, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { MODELS, calculateCost } from '$convex/models';
 
 	const client = useConvexClient();
 

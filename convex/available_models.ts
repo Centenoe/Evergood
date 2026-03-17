@@ -1,13 +1,12 @@
-import { v } from "convex/values";
-import { action, query } from "./_generated/server";
-import { MODELS, makeDynamicModelConfig } from "./models";
-import type { ModelConfig } from "./models";
+import { query } from "./_generated/server";
+import { inferModelRouting } from "./models";
+import type { Provider } from "./models";
 
 /** Serializable model info returned to the frontend. */
 export interface AvailableModel {
   id: string;
   label: string;
-  provider: "openai" | "anthropic" | "perplexity";
+  provider: Provider;
   maxTokens: number;
   hasPricing: boolean;
   inputCostPer1M: number;
@@ -15,97 +14,30 @@ export interface AvailableModel {
 }
 
 /**
- * Returns all available models — curated list merged with
- * any additional models discovered from the OpenAI /v1/models endpoint.
- *
- * Only includes models for providers whose API keys are configured.
+ * Returns all active models from the modelPricing table.
+ * The database (populated by the OpenRouter pricing oracle) is the single source of truth.
  */
-export const listAvailable = action({
+export const listAvailable = query({
   args: {},
-  handler: async (): Promise<AvailableModel[]> => {
-    const models: AvailableModel[] = [];
-    const seen = new Set<string>();
+  handler: async (ctx): Promise<AvailableModel[]> => {
+    const allPricing = await ctx.db.query("modelPricing").collect();
 
-    // Determine which providers have API keys
-    const hasOpenAI = !!process.env.OPENAI_API_KEY;
-    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
-    const hasPerplexity = !!process.env.PERPLEXITY_API_KEY;
-
-    // 1. Add curated models (only for providers with keys)
-    for (const [id, config] of Object.entries(MODELS)) {
-      if (config.provider === "openai" && !hasOpenAI) continue;
-      if (config.provider === "anthropic" && !hasAnthropic) continue;
-      if (config.provider === "perplexity" && !hasPerplexity) continue;
-
-      models.push({
-        id,
-        label: config.label,
-        provider: config.provider,
-        maxTokens: config.maxTokens,
-        hasPricing: config.inputCostPer1M > 0,
-        inputCostPer1M: config.inputCostPer1M,
-        outputCostPer1M: config.outputCostPer1M,
+    const models: AvailableModel[] = allPricing
+      .filter((row) => row.isActive !== false)
+      .map((row) => {
+        const routing = inferModelRouting(row.modelId);
+        return {
+          id: row.modelId,
+          label: row.name || row.modelId,
+          provider: routing.provider,
+          maxTokens: row.maxTokens ?? 0,
+          hasPricing: row.prompt > 0 || row.completion > 0,
+          inputCostPer1M: row.prompt * 1_000_000,
+          outputCostPer1M: row.completion * 1_000_000,
+        };
       });
-      seen.add(id);
-    }
 
-    // 2. Fetch dynamic OpenAI models
-    if (hasOpenAI) {
-      try {
-        const response = await fetch("https://api.openai.com/v1/models", {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = (await response.json()) as {
-            data: Array<{ id: string; owned_by: string }>;
-          };
-
-          // Filter for chat-capable models (gpt-*, o1-*, o3-*, o4-*, chatgpt-*)
-          const chatModels = data.data.filter((m) => {
-            const id = m.id.toLowerCase();
-            return (
-              (id.startsWith("gpt-") ||
-                id.startsWith("o1") ||
-                id.startsWith("o3") ||
-                id.startsWith("o4") ||
-                id.startsWith("chatgpt-")) &&
-              !id.includes("instruct") &&
-              !id.includes("realtime") &&
-              !id.includes("audio") &&
-              !id.includes("transcribe") &&
-              !id.includes("tts") &&
-              !id.includes("dall-e") &&
-              !id.includes("whisper") &&
-              !id.includes("embedding") &&
-              !id.includes("search") &&
-              !id.includes("moderation")
-            );
-          });
-
-          for (const m of chatModels) {
-            if (!seen.has(m.id)) {
-              models.push({
-                id: m.id,
-                label: m.id,
-                provider: "openai",
-                maxTokens: 128_000,
-                hasPricing: false,
-                inputCostPer1M: 0,
-                outputCostPer1M: 0,
-              });
-              seen.add(m.id);
-            }
-          }
-        }
-      } catch {
-        // Silently skip — curated list is good enough
-      }
-    }
-
-    // Sort: curated (with pricing) first, then alphabetical
+    // Sort: models with pricing first, then by provider, then alphabetical
     models.sort((a, b) => {
       if (a.hasPricing !== b.hasPricing) return a.hasPricing ? -1 : 1;
       if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);

@@ -3,6 +3,7 @@ import { action, mutation, query } from "./_generated/server";
 import { requireAuth } from "./auth.helpers";
 import { api } from "./_generated/api";
 import { calculateCost } from "./models";
+import type { OraclePricing } from "./models";
 
 /**
  * Start a deep research query using Perplexity's sonar-deep-research model.
@@ -89,7 +90,25 @@ export const run = action({
     const citations = data.citations ?? [];
     const inputTokens = data.usage?.prompt_tokens ?? 0;
     const outputTokens = data.usage?.completion_tokens ?? 0;
-    const costUsd = calculateCost("sonar-pro", inputTokens, outputTokens);
+
+    // Oracle pricing lookup
+    let oraclePricing: OraclePricing | null = null;
+    try {
+      const pricingRow = await ctx.runQuery(api.pricing.getModelPricing, { modelId: "perplexity/sonar-deep-research" });
+      if (pricingRow) {
+        oraclePricing = {
+          prompt: pricingRow.prompt,
+          completion: pricingRow.completion,
+          input_cache_read: pricingRow.input_cache_read ?? undefined,
+          input_cache_write: pricingRow.input_cache_write ?? undefined,
+          web_search: pricingRow.web_search ?? undefined,
+        };
+      }
+    } catch {
+      // Non-critical
+    }
+
+    const costUsd = calculateCost(inputTokens, outputTokens, oraclePricing);
 
     // Log usage for the cost dashboard
     try {

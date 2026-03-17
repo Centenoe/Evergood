@@ -34,7 +34,7 @@
         loading = true;
         fetchError = null;
         try {
-            const allModels = await client.action(api.available_models.listAvailable, {});
+            const allModels = await client.query(api.available_models.listAvailable, {});
             const enabledRaw = localStorage.getItem("evergood-enabled-models");
             if (enabledRaw) {
                 try {
