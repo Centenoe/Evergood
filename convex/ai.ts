@@ -59,6 +59,37 @@ export const chat = action({
       (m: { isStreaming?: boolean }) => !m.isStreaming
     );
 
+    // 2b. Dual-layer vector memory search (Space + Global)
+    if (nonStreamingMessages.length > 0) {
+      const lastUserMessage = [...nonStreamingMessages]
+        .reverse()
+        .find((m: { role: string }) => m.role === "user");
+
+      if (lastUserMessage) {
+        try {
+          const relevantMemories = await ctx.runAction(
+            api.embeddings.searchMemories,
+            {
+              queryText: lastUserMessage.content,
+              spaceId: spaceId ?? undefined,
+              limit: 5,
+            }
+          );
+
+          if (relevantMemories.length > 0) {
+            systemContent += "\n\n## Relevant Memories\n";
+            systemContent += "The following memories are semantically relevant to this conversation:\n\n";
+            for (const mem of relevantMemories) {
+              const scopeLabel = mem.scope === "space" ? "[Space]" : "[Global]";
+              systemContent += `- ${scopeLabel} (${mem.category}): ${mem.content}\n`;
+            }
+          }
+        } catch {
+          // Vector memory search failure is non-critical
+        }
+      }
+    }
+
     // 3. Optionally retrieve semantically similar past exchanges
     if (searchPastChats && nonStreamingMessages.length > 0) {
       const lastUserMessage = [...nonStreamingMessages]

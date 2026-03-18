@@ -5,10 +5,12 @@ export default defineSchema({
   spaces: defineTable({
     userId: v.string(),
     name: v.string(),
+    description: v.optional(v.string()),
     icon: v.optional(v.string()),
     color: v.optional(v.string()),
     systemPrompt: v.string(),
     defaultModel: v.optional(v.string()),
+    webSearchDefault: v.optional(v.string()),
     sortOrder: v.number(),
     createdAt: v.number(),
   })
@@ -68,6 +70,7 @@ export default defineSchema({
     category: v.string(),
     content: v.string(),
     confidence: v.number(),
+    embedding: v.optional(v.array(v.float64())),
     createdAt: v.number(),
     lastReinforced: v.number(),
   })
@@ -75,7 +78,12 @@ export default defineSchema({
     .index("by_user", ["userId", "category"])
     .index("by_user_global", ["userId", "spaceId"])
     .index("by_space", ["spaceId"])
-    .index("by_source_session", ["sourceSessionId"]),
+    .index("by_source_session", ["sourceSessionId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["userId", "spaceId"],
+    }),
 
   usageLogs: defineTable({
     userId: v.string(),

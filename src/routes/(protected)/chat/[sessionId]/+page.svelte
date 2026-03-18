@@ -3,6 +3,7 @@
     import { useQuery, useConvexClient } from "convex-svelte";
     import { api } from "$convex/_generated/api";
     import type { Id } from "$convex/_generated/dataModel";
+    import { goto } from "$app/navigation";
     import ChatMessage from "$lib/components/ChatMessage.svelte";
     import ModelSelector from "$lib/components/ModelSelector.svelte";
     import DebugPanel from "$lib/components/DebugPanel.svelte";
@@ -13,6 +14,7 @@
     import History from "lucide-svelte/icons/history";
     import Bug from "lucide-svelte/icons/bug";
     import ChevronDown from "lucide-svelte/icons/chevron-down";
+    import ChevronRight from "lucide-svelte/icons/chevron-right";
 
     import { tick, onMount } from "svelte";
 
@@ -48,6 +50,13 @@
     const streamingQuery = useQuery(
         api.messages.getStreamingMessage,
         () => (sessionId ? { sessionId } : "skip"),
+    );
+
+    // Space query for breadcrumbs
+    let spaceId = $derived(sessionQuery.data?.spaceId as Id<"spaces"> | undefined);
+    const spaceQuery = useQuery(
+        api.spaces.get,
+        () => (spaceId ? { id: spaceId } : "skip"),
     );
 
     let prompt = $state("");
@@ -118,7 +127,7 @@
                 searchPastChats,
                 searchProvider: searchProvider !== "off" ? searchProvider : undefined,
             });
-            if (!titleGenerated && !sessionQuery.data?.title) {
+            if (!titleGenerated && (!sessionQuery.data?.title || sessionQuery.data.title === "New Chat")) {
                 titleGenerated = true;
                 client.action(api.ai.generateTitle, { sessionId }).catch(() => {});
             }
@@ -138,6 +147,19 @@
             <TokenCostBar inputText="" model={currentModel} {totalCost} {totalInputTokens} {totalOutputTokens} />
             <span class="text-[11px] text-eg-text-tertiary">{displayMessages.filter(m => m.role === "assistant" && !m.isStreaming).length} responses</span>
         </div>
+    {/if}
+
+    {#if spaceQuery.data}
+        <nav class="flex items-center gap-1.5 px-4 sm:px-10 py-2 border-b border-eg-border-subtle bg-eg-bg-secondary text-sm">
+            <button onclick={() => goto('/spaces')} class="text-eg-text-tertiary hover:text-eg-text transition-colors">Spaces</button>
+            <ChevronRight size={14} class="text-eg-text-tertiary" />
+            <button onclick={() => goto(`/spaces/${spaceQuery.data?._id}`)} class="flex items-center gap-1.5 text-eg-text-tertiary hover:text-eg-text transition-colors">
+                <span>{spaceQuery.data?.icon ?? '📁'}</span>
+                <span>{spaceQuery.data?.name}</span>
+            </button>
+            <ChevronRight size={14} class="text-eg-text-tertiary" />
+            <span class="text-eg-text font-medium truncate">{sessionQuery.data?.title ?? 'Chat'}</span>
+        </nav>
     {/if}
 
     <div class="flex flex-1 overflow-hidden">

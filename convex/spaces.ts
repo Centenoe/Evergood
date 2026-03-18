@@ -38,10 +38,12 @@ export const create = mutation({
     name: v.string(),
     icon: v.optional(v.string()),
     color: v.optional(v.string()),
+    description: v.optional(v.string()),
     systemPrompt: v.optional(v.string()),
     defaultModel: v.optional(v.string()),
+    webSearchDefault: v.optional(v.string()),
   },
-  handler: async (ctx, { name, icon, color, systemPrompt, defaultModel }) => {
+  handler: async (ctx, { name, icon, color, description, systemPrompt, defaultModel, webSearchDefault }) => {
     const userId = await requireAuth(ctx);
     const now = Date.now();
 
@@ -55,10 +57,12 @@ export const create = mutation({
     return await ctx.db.insert("spaces", {
       userId,
       name,
+      description,
       icon,
       color,
       systemPrompt: systemPrompt ?? "",
       defaultModel,
+      webSearchDefault,
       sortOrder: maxSort + 1,
       createdAt: now,
     });
@@ -74,8 +78,10 @@ export const update = mutation({
     name: v.optional(v.string()),
     icon: v.optional(v.string()),
     color: v.optional(v.string()),
+    description: v.optional(v.string()),
     systemPrompt: v.optional(v.string()),
     defaultModel: v.optional(v.string()),
+    webSearchDefault: v.optional(v.string()),
   },
   handler: async (ctx, { id, ...fields }) => {
     const userId = await requireAuth(ctx);
@@ -87,8 +93,10 @@ export const update = mutation({
     if (fields.name !== undefined) patch.name = fields.name;
     if (fields.icon !== undefined) patch.icon = fields.icon;
     if (fields.color !== undefined) patch.color = fields.color;
+    if (fields.description !== undefined) patch.description = fields.description;
     if (fields.systemPrompt !== undefined) patch.systemPrompt = fields.systemPrompt;
     if (fields.defaultModel !== undefined) patch.defaultModel = fields.defaultModel;
+    if (fields.webSearchDefault !== undefined) patch.webSearchDefault = fields.webSearchDefault;
 
     await ctx.db.patch(id, patch);
   },

@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { requireAuth } from "./auth.helpers";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * List all memories for the authenticated user.
@@ -143,7 +145,7 @@ export const upsert = mutation({
     }
 
     // Create new memory with userId
-    return await ctx.db.insert("memories", {
+    const memoryId = await ctx.db.insert("memories", {
       userId,
       spaceId,
       sourceSessionId,
@@ -153,6 +155,11 @@ export const upsert = mutation({
       createdAt: now,
       lastReinforced: now,
     });
+
+    // Schedule async embedding generation
+    await ctx.scheduler.runAfter(0, api.embeddings.embedMemory, { memoryId });
+
+    return memoryId;
   },
 });
 
@@ -179,6 +186,21 @@ export const update = mutation({
     if (confidence !== undefined) patch.confidence = confidence;
     if (category !== undefined) patch.category = category;
     await ctx.db.patch(id, patch);
+  },
+});
+
+/**
+ * Save an embedding vector to a memory document.
+ */
+export const saveEmbedding = mutation({
+  args: {
+    memoryId: v.id("memories"),
+    embedding: v.array(v.float64()),
+  },
+  handler: async (ctx, { memoryId, embedding }) => {
+    const memory = await ctx.db.get(memoryId);
+    if (!memory) return;
+    await ctx.db.patch(memoryId, { embedding });
   },
 });
 

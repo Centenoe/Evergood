@@ -77,6 +77,36 @@ export const embedMessage = action({
 });
 
 /**
+ * Embed a memory's content and save the vector to the memory record.
+ * Designed to be scheduled after a memory is created/updated.
+ */
+export const embedMemory = action({
+  args: {
+    memoryId: v.id("memories"),
+  },
+  handler: async (ctx, { memoryId }) => {
+    const memory = await ctx.runQuery(api.memories.get, { id: memoryId });
+    if (!memory || !memory.content) return;
+
+    // Skip very short memories
+    if (memory.content.length < 10) return;
+
+    try {
+      const embedding = await ctx.runAction(api.embeddings.embedText, {
+        text: memory.content.slice(0, 8000),
+      });
+
+      await ctx.runMutation(api.memories.saveEmbedding, {
+        memoryId,
+        embedding,
+      });
+    } catch {
+      // Embedding failure is non-critical for memories
+    }
+  },
+});
+
+/**
  * Search for semantically similar messages using vector search.
  * Returns the top N most similar messages, optionally excluding a session.
  */
@@ -131,5 +161,90 @@ export const searchSimilar = action({
     }
 
     return enriched;
+  },
+});
+
+/**
+ * Dual-layer vector search over memories.
+ * 1. Search Space-scoped memories (if spaceId provided)
+ * 2. Search Global memories (spaceId === undefined)
+ * 3. Merge and deduplicate, returning top N results.
+ */
+export const searchMemories = action({
+  args: {
+    queryText: v.string(),
+    spaceId: v.optional(v.id("spaces")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { queryText, spaceId, limit }) => {
+    const userId = await requireAuth(ctx);
+    const targetLimit = limit ?? 5;
+
+    // Embed the query
+    const queryEmbedding = await ctx.runAction(api.embeddings.embedText, {
+      text: queryText,
+    });
+
+    const results: Array<{
+      _id: Id<"memories">;
+      _score: number;
+      content: string;
+      category: string;
+      scope: "space" | "global";
+    }> = [];
+
+    const seenIds = new Set<string>();
+
+    // 1. Space-scoped memories first (higher priority)
+    if (spaceId) {
+      const spaceResults = await ctx.vectorSearch("memories", "by_embedding", {
+        vector: queryEmbedding,
+        limit: targetLimit,
+        filter: (q) => q.eq("spaceId", spaceId),
+      });
+
+      for (const r of spaceResults) {
+        const memory = await ctx.runQuery(api.memories.get, { id: r._id });
+        if (!memory || memory.userId !== userId) continue;
+        seenIds.add(r._id);
+        results.push({
+          _id: r._id,
+          _score: r._score,
+          content: memory.content,
+          category: memory.category,
+          scope: "space",
+        });
+      }
+    }
+
+    // 2. Global memories (fill remaining slots)
+    const remaining = targetLimit - results.length;
+    if (remaining > 0) {
+      const globalResults = await ctx.vectorSearch("memories", "by_embedding", {
+        vector: queryEmbedding,
+        limit: remaining + 5,
+        filter: (q) => q.eq("userId", userId),
+      });
+
+      for (const r of globalResults) {
+        if (results.length >= targetLimit) break;
+        if (seenIds.has(r._id)) continue;
+
+        const memory = await ctx.runQuery(api.memories.get, { id: r._id });
+        if (!memory) continue;
+        // Only include global memories (no spaceId) in this layer
+        if (memory.spaceId) continue;
+
+        results.push({
+          _id: r._id,
+          _score: r._score,
+          content: memory.content,
+          category: memory.category,
+          scope: "global",
+        });
+      }
+    }
+
+    return results;
   },
 });
