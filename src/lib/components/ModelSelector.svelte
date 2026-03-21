@@ -8,9 +8,10 @@
     interface Props {
         selected: string;
         onSelect: (model: string) => void;
+        selectedSupportsThinking?: boolean;
     }
 
-    let { selected, onSelect }: Props = $props();
+    let { selected, onSelect, selectedSupportsThinking = $bindable(false) }: Props = $props();
 
     const client = useConvexClient();
 
@@ -27,6 +28,7 @@
             hasPricing: boolean;
             inputCostPer1M: number;
             outputCostPer1M: number;
+            supportsThinking: boolean;
         }>
     >([]);
     let loading = $state(true);
@@ -85,6 +87,12 @@
             provider: "openai",
         },
     );
+
+    // Sync bindable thinking capability when selection changes
+    $effect(() => {
+        const found = models.find((m) => m.id === selected);
+        selectedSupportsThinking = found?.supportsThinking ?? false;
+    });
 
     let filteredModels = $derived.by(() => {
         const q = searchFilter.toLowerCase();

@@ -160,12 +160,18 @@ export const finishStreaming = mutation({
     if (!message) throw new Error("Message not found");
     await verifySessionOwnership(ctx, message.sessionId, userId);
 
+    // Strip thinking blocks before persisting final content
+    const cleanContent = message.content.replace(/<think>[\s\S]*?<\/think>\s*/g, "");
+
     const patch: Record<string, unknown> = {
       isStreaming: false,
       inputTokens,
       outputTokens,
       costUsd,
     };
+    if (cleanContent !== message.content) {
+      patch.content = cleanContent;
+    }
     if (citations && citations.length > 0) {
       patch.citations = citations;
     }

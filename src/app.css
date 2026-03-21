@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   /* Evergood semantic tokens — driven by JS themeStore.init() */
@@ -92,56 +93,102 @@ html, body {
   outline-offset: 2px;
 }
 
+.eg-tooltip-trigger {
+  position: relative;
+}
+
+.eg-tooltip-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px);
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--eg-border);
+  border-radius: 0.45rem;
+  background: var(--eg-surface);
+  color: var(--eg-text);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 20;
+}
+
+.eg-tooltip-trigger:hover::after,
+.eg-tooltip-trigger:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* Code block wrapper */
 .code-block-wrapper {
-  position: relative;
-  margin: 0.75em 0;
+  overflow: hidden;
+  margin: 1.25em 0;
+  border: 1px solid var(--eg-border-subtle);
+  border-radius: 8px;
+  background: var(--eg-bg-tertiary);
 }
 
 .code-block-wrapper pre {
   margin: 0;
 }
 
-.code-lang-label {
-  position: absolute;
-  top: 6px;
-  left: 12px;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--eg-text-tertiary);
-  pointer-events: none;
-  z-index: 1;
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.75rem;
+  background: color-mix(in srgb, var(--eg-bg) 60%, transparent 40%);
+  border-bottom: 1px solid var(--eg-border-subtle);
 }
 
-.code-copy-btn {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  padding: 4px 6px;
+.code-lang-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: var(--eg-text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+.code-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.code-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
   border-radius: 4px;
   color: var(--eg-text-tertiary);
   background: transparent;
   border: none;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
-  z-index: 2;
+  transition: color 0.15s, background-color 0.15s;
 }
 
-.code-block-wrapper:hover .code-copy-btn {
-  opacity: 1;
-}
-
-.code-copy-btn:hover {
+.code-action-btn:hover {
   color: var(--eg-text);
-  background: var(--eg-bg-tertiary);
+  background: color-mix(in srgb, var(--eg-text) 5%, transparent 95%);
 }
 
-.code-copy-btn.copied {
+.code-action-btn:focus-visible {
+  outline: 2px solid var(--eg-accent);
+  outline-offset: -2px;
+}
+
+.code-action-btn.copied,
+.code-action-btn.downloaded {
   color: var(--eg-success);
-  opacity: 1;
 }
 
 /* Shiki dual-theme support */
@@ -153,10 +200,9 @@ html, body {
 
 /* Shiki pre styling */
 .code-block-wrapper .shiki {
-  background: var(--eg-bg-tertiary) !important;
-  border: 1px solid var(--eg-border-subtle);
-  border-radius: 8px;
-  padding: 2em 1em 1em;
+  background: transparent !important;
+  border: none;
+  padding: 1rem;
   overflow-x: auto;
   font-size: 0.85em;
   line-height: 1.6;

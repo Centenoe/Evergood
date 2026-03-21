@@ -11,6 +11,7 @@ export interface AvailableModel {
   hasPricing: boolean;
   inputCostPer1M: number;
   outputCostPer1M: number;
+  supportsThinking: boolean;
 }
 
 /**
@@ -34,6 +35,7 @@ export const listAvailable = query({
           hasPricing: row.prompt > 0 || row.completion > 0,
           inputCostPer1M: row.prompt * 1_000_000,
           outputCostPer1M: row.completion * 1_000_000,
+          supportsThinking: row.supportsThinking === true,
         };
       });
 

@@ -4,6 +4,7 @@
     import { goto } from "$app/navigation";
     import ModelSelector from "$lib/components/ModelSelector.svelte";
     import ChatInput from "$lib/components/ChatInput.svelte";
+    import Brain from "lucide-svelte/icons/brain";
 
 
     const client = useConvexClient();
@@ -11,6 +12,13 @@
     let prompt = $state("");
     let selectedModel = $state("gpt-4o");
     let submitting = $state(false);
+    let enableThinking = $state(false);
+    let modelSupportsThinking = $state(false);
+
+    // Reset thinking toggle when model doesn't support it
+    $effect(() => {
+        if (!modelSupportsThinking) enableThinking = false;
+    });
 
     async function handleSubmit() {
         if (!prompt.trim() || submitting) return;
@@ -22,7 +30,7 @@
             const sessionId = await client.mutation(api.sessions.create, { model: selectedModel });
             await client.mutation(api.messages.send, { sessionId, content: userMessage, model: selectedModel });
             goto(`/chat/${sessionId}`);
-            client.action(api.ai.chat, { sessionId, model: selectedModel });
+            client.action(api.ai.chat, { sessionId, model: selectedModel, enableThinking: enableThinking || undefined });
             client.action(api.ai.generateTitle, { sessionId });
         } catch (error) {
             console.error("Failed to create chat:", error);
@@ -51,7 +59,19 @@
             <!-- Input -->
             <ChatInput bind:value={prompt} disabled={submitting} onsubmit={handleSubmit}>
                 {#snippet actions()}
-                    <ModelSelector selected={selectedModel} onSelect={(m) => (selectedModel = m)} />
+                    <ModelSelector selected={selectedModel} onSelect={(m) => (selectedModel = m)} bind:selectedSupportsThinking={modelSupportsThinking} />
+
+                    {#if modelSupportsThinking}
+                        <button
+                            onclick={() => (enableThinking = !enableThinking)}
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
+                                {enableThinking ? 'bg-purple-500/15 text-purple-400' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                            title="Enable extended thinking"
+                        >
+                            <Brain size={14} />
+                            <span class="hidden sm:inline">Think</span>
+                        </button>
+                    {/if}
                 {/snippet}
             </ChatInput>
 

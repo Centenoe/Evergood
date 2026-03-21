@@ -1,9 +1,12 @@
 ﻿<script lang="ts">
     import Bot from "lucide-svelte/icons/bot";
+    import Brain from "lucide-svelte/icons/brain";
+    import Braces from "lucide-svelte/icons/braces";
     import ChevronDown from "lucide-svelte/icons/chevron-down";
     import ChevronUp from "lucide-svelte/icons/chevron-up";
     import Globe from "lucide-svelte/icons/globe";
     import ExternalLink from "lucide-svelte/icons/external-link";
+    import FileText from "lucide-svelte/icons/file-text";
     import X from "lucide-svelte/icons/x";
     import { renderMarkdown } from "$lib/utils/markdown";
 
@@ -34,6 +37,48 @@
     let userExpanded = $state(true);
     let showAllSources = $state(false);
     let hoveredCitation = $state<number | null>(null);
+    let rawResponseCopied = $state(false);
+    let sanitizedResponseCopied = $state(false);
+
+    const COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    const DOWNLOAD_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>';
+    const SUCCESS_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+    const LANGUAGE_EXTENSIONS: Record<string, string> = {
+        bash: "sh",
+        c: "c",
+        "c++": "cpp",
+        cpp: "cpp",
+        css: "css",
+        go: "go",
+        html: "html",
+        java: "java",
+        javascript: "js",
+        js: "js",
+        json: "json",
+        jsx: "jsx",
+        markdown: "md",
+        md: "md",
+        php: "php",
+        py: "py",
+        python: "py",
+        ruby: "rb",
+        rust: "rs",
+        shell: "sh",
+        sh: "sh",
+        sql: "sql",
+        svelte: "svelte",
+        text: "txt",
+        plaintext: "txt",
+        toml: "toml",
+        ts: "ts",
+        tsx: "tsx",
+        typescript: "ts",
+        txt: "txt",
+        xml: "xml",
+        yaml: "yml",
+        yml: "yml",
+    };
 
     function getProviderColor(modelId: string): string {
         if (
@@ -49,25 +94,114 @@
         return "bg-eg-text-tertiary";
     }
 
-    let renderedHtml = $derived(
-        role === "assistant" ? renderMarkdown(content) : "",
-    );
+    function getNormalizedLanguage(language: string | null | undefined): string {
+        const normalized = language?.trim().toLowerCase().replace(/^language-/, "") ?? "";
+        return normalized || "text";
+    }
+
+    function getSnippetFilename(language: string | null | undefined): string {
+        const normalized = getNormalizedLanguage(language);
+        const extension = LANGUAGE_EXTENSIONS[normalized] ?? "txt";
+        return `snippet.${extension}`;
+    }
+
+    function getCodeTextFromWrapper(wrapper: Element | null): string {
+        if (!wrapper) return "";
+        const codeElement = wrapper.querySelector("pre code") ?? wrapper.querySelector("pre");
+        return codeElement?.textContent ?? "";
+    }
+
+    async function copyTextToClipboard(text: string): Promise<boolean> {
+        if (!text || typeof navigator === "undefined" || !navigator.clipboard) {
+            return false;
+        }
+
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function flashActionButton(
+        button: HTMLButtonElement,
+        successClass: "copied" | "downloaded",
+        idleIcon: string,
+    ): void {
+        button.classList.add(successClass);
+        button.innerHTML = SUCCESS_ICON_SVG;
+
+        window.setTimeout(() => {
+            button.classList.remove(successClass);
+            button.innerHTML = idleIcon;
+        }, 2000);
+    }
+
+    function triggerCodeDownload(code: string, language: string | null | undefined): void {
+        const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+
+        anchor.href = objectUrl;
+        anchor.download = getSnippetFilename(language);
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+
+        window.setTimeout(() => {
+            URL.revokeObjectURL(objectUrl);
+        }, 0);
+    }
+
+    function resetResponseCopiedState(kind: "raw" | "sanitized"): void {
+        window.setTimeout(() => {
+            if (kind === "raw") {
+                rawResponseCopied = false;
+                return;
+            }
+
+            sanitizedResponseCopied = false;
+        }, 2000);
+    }
+
+    async function handleCopyRawResponse(): Promise<void> {
+        const copied = await copyTextToClipboard(content);
+        if (!copied) return;
+
+        rawResponseCopied = true;
+        resetResponseCopiedState("raw");
+    }
+
+    async function handleCopySanitizedResponse(): Promise<void> {
+        const copied = await copyTextToClipboard(renderedHtml);
+        if (!copied) return;
+
+        sanitizedResponseCopied = true;
+        resetResponseCopiedState("sanitized");
+    }
 
     function handleProseClick(e: MouseEvent) {
         const target = e.target as HTMLElement;
-        const btn = target.closest('.code-copy-btn') as HTMLElement | null;
-        if (!btn) return;
-        const wrapper = btn.closest('.code-block-wrapper');
-        const code = wrapper?.querySelector('code');
+        const button = target.closest('.code-copy-btn, .download-code-btn') as HTMLButtonElement | null;
+        if (!button) return;
+
+        const wrapper = button.closest('.code-block-wrapper');
+        const code = getCodeTextFromWrapper(wrapper);
         if (!code) return;
-        navigator.clipboard.writeText(code.textContent ?? '').then(() => {
-            btn.classList.add('copied');
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-            setTimeout(() => {
-                btn.classList.remove('copied');
-                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-            }, 2000);
-        }).catch(() => {});
+
+        if (button.classList.contains('code-copy-btn')) {
+            copyTextToClipboard(code).then((copied) => {
+                if (copied) {
+                    flashActionButton(button, 'copied', COPY_ICON_SVG);
+                }
+            });
+            return;
+        }
+
+        const language = button.dataset.lang;
+        triggerCodeDownload(code, language);
+        flashActionButton(button, 'downloaded', DOWNLOAD_ICON_SVG);
     }
 
     function extractDomain(url: string): string {
@@ -90,7 +224,33 @@
 
     let visibleCitations = $derived(citations?.slice(0, 3) ?? []);
     let extraCitationCount = $derived(Math.max(0, (citations?.length ?? 0) - 3));
-</script>
+
+    // Extract thinking blocks from content
+    let thinkingBlocks = $derived.by(() => {
+        const blocks: string[] = [];
+        const regex = /<think>([\s\S]*?)<\/think>/g;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+            if (match[1].trim()) blocks.push(match[1].trim());
+        }
+        return blocks;
+    });
+
+    // Check if there's an unclosed thinking block (still streaming thinking)
+    let isThinkingInProgress = $derived(
+        isStreaming === true && /<think>(?!.*<\/think>)/s.test(content)
+    );
+
+    // Content without thinking blocks for markdown rendering
+    let contentWithoutThinking = $derived(
+        content.replace(/<think>[\s\S]*?<\/think>\s*/g, "").replace(/<think>[\s\S]*/g, "")
+    );
+
+    let renderedHtml = $derived(
+        role === "assistant" ? renderMarkdown(contentWithoutThinking) : "",
+    );
+
+    let thinkingOpen = $state(false);</script>
 
 {#if role === "user"}
     <div class="flex justify-end mb-6 px-2">
@@ -141,6 +301,42 @@
                     </div>
                 {/if}
 
+                <!-- Thinking block -->
+                {#if thinkingBlocks.length > 0 || isThinkingInProgress}
+                    <div class="mb-3">
+                        <button
+                            onclick={() => (thinkingOpen = !thinkingOpen)}
+                            class="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                        >
+                            <Brain size={13} />
+                            {#if isThinkingInProgress}
+                                <span class="thinking-dots">Thinking</span>
+                            {:else}
+                                <span>{thinkingOpen ? 'Hide' : 'Show'} thinking</span>
+                                {#if thinkingOpen}
+                                    <ChevronUp size={12} />
+                                {:else}
+                                    <ChevronDown size={12} />
+                                {/if}
+                            {/if}
+                        </button>
+                        {#if thinkingOpen || isThinkingInProgress}
+                            <div class="mt-2 pl-3 border-l-2 border-purple-500/30 text-sm text-eg-text-tertiary leading-relaxed whitespace-pre-wrap">
+                                {#each thinkingBlocks as block}
+                                    <p>{block}</p>
+                                {/each}
+                                {#if isThinkingInProgress}
+                                    {@const unclosed = content.match(/<think>([^]*?)$/)?.[1]?.trim() ?? ""}
+                                    {#if unclosed}
+                                        <p>{unclosed}</p>
+                                    {/if}
+                                    <span class="inline-block w-2 h-4 bg-purple-400/50 ml-0.5 animate-pulse rounded-sm"></span>
+                                {/if}
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <!-- Rendered markdown -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -154,6 +350,31 @@
                         {/if}
                     {/if}
                 </div>
+
+                {#if content.trim()}
+                    <div class="mt-2 flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            class="eg-tooltip-trigger inline-flex h-7 w-7 items-center justify-center rounded-md text-eg-text/70 transition-colors hover:bg-eg-bg-tertiary hover:text-eg-text"
+                            onclick={handleCopyRawResponse}
+                            aria-label="Copy raw response"
+                            title={rawResponseCopied ? "Copied raw copy" : "Raw Copy"}
+                            data-tooltip={rawResponseCopied ? "Copied raw copy" : "Raw Copy"}
+                        >
+                            <Braces size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            class="eg-tooltip-trigger inline-flex h-7 w-7 items-center justify-center rounded-md text-eg-text/70 transition-colors hover:bg-eg-bg-tertiary hover:text-eg-text"
+                            onclick={handleCopySanitizedResponse}
+                            aria-label="Copy sanitized response"
+                            title={sanitizedResponseCopied ? "Copied copy response" : "Copy Response"}
+                            data-tooltip={sanitizedResponseCopied ? "Copied copy response" : "Copy Response"}
+                        >
+                            <FileText size={14} />
+                        </button>
+                    </div>
+                {/if}
 
                 <!-- Token / cost footer -->
                 {#if !isStreaming && (inputTokens || outputTokens || costUsd)}
@@ -375,5 +596,18 @@
     :global(.prose-eg img) {
         max-width: 100%;
         border-radius: 8px;
+    }
+
+    /* Thinking dots animation */
+    .thinking-dots::after {
+        content: '';
+        animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
     }
 </style>

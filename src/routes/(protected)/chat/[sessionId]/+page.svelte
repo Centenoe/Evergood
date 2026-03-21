@@ -15,6 +15,7 @@
     import Bug from "lucide-svelte/icons/bug";
     import ChevronDown from "lucide-svelte/icons/chevron-down";
     import ChevronRight from "lucide-svelte/icons/chevron-right";
+    import Brain from "lucide-svelte/icons/brain";
 
     import { tick, onMount } from "svelte";
 
@@ -66,6 +67,13 @@
     let searchPastChats = $state(false);
     let debugOpen = $state(false);
     let messagesContainer: HTMLDivElement | undefined = $state(undefined);
+    let enableThinking = $state(false);
+    let modelSupportsThinking = $state(false);
+
+    // Reset thinking toggle when model doesn't support it
+    $effect(() => {
+        if (!modelSupportsThinking) enableThinking = false;
+    });
 
     let currentModel = $derived(sessionQuery.data?.model ?? "gpt-4o");
     let isStreaming = $derived(streamingQuery.data?.isStreaming === true);
@@ -126,6 +134,7 @@
                 model: currentModel,
                 searchPastChats,
                 searchProvider: searchProvider !== "off" ? searchProvider : undefined,
+                enableThinking: enableThinking || undefined,
             });
             if (!titleGenerated && (!sessionQuery.data?.title || sessionQuery.data.title === "New Chat")) {
                 titleGenerated = true;
@@ -216,7 +225,7 @@
                 onsubmit={handleSubmit}
             >
                 {#snippet actions()}
-                    <ModelSelector selected={currentModel} onSelect={handleModelChange} />
+                    <ModelSelector selected={currentModel} onSelect={handleModelChange} bind:selectedSupportsThinking={modelSupportsThinking} />
 
                     <!-- History toggle -->
                     <button
@@ -228,6 +237,19 @@
                         <History size={14} />
                         <span class="hidden sm:inline">History</span>
                     </button>
+
+                    <!-- Think toggle -->
+                    {#if modelSupportsThinking}
+                        <button
+                            onclick={() => (enableThinking = !enableThinking)}
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
+                                {enableThinking ? 'bg-purple-500/15 text-purple-400' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                            title="Enable extended thinking"
+                        >
+                            <Brain size={14} />
+                            <span class="hidden sm:inline">Think</span>
+                        </button>
+                    {/if}
 
                     <!-- Web search toggle -->
                     <div class="relative">

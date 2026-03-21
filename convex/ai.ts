@@ -28,8 +28,9 @@ export const chat = action({
     model: v.string(),
     searchPastChats: v.optional(v.boolean()),
     searchProvider: v.optional(v.string()),
+    enableThinking: v.optional(v.boolean()),
   },
-  handler: async (ctx, { sessionId, model, searchPastChats, searchProvider }): Promise<{ messageId: Id<"messages">; cost: number }> => {
+  handler: async (ctx, { sessionId, model, searchPastChats, searchProvider, enableThinking }): Promise<{ messageId: Id<"messages">; cost: number }> => {
     await requireAuth(ctx);
 
     // Infer provider routing from the model ID
@@ -187,7 +188,8 @@ export const chat = action({
           })
         ),
         streamingMessageId,
-        model
+        model,
+        enableThinking ?? false
       );
 
       // 6. Snapshot-on-write: lookup Oracle pricing, calculate cost, save to message
@@ -421,7 +423,8 @@ async function callLLM(
   systemContent: string,
   chatHistory: ChatMessage[],
   streamingMessageId: string,
-  _modelName: string
+  _modelName: string,
+  enableThinking: boolean = false
 ): Promise<LLMResult> {
   switch (modelConfig.provider) {
     case "anthropic":
@@ -430,7 +433,8 @@ async function callLLM(
         modelConfig,
         systemContent,
         chatHistory,
-        streamingMessageId
+        streamingMessageId,
+        enableThinking
       );
     case "openai":
       return callOpenAI(
@@ -461,7 +465,8 @@ async function callAnthropic(
   modelConfig: ModelRouting,
   systemContent: string,
   chatHistory: ChatMessage[],
-  streamingMessageId: string
+  streamingMessageId: string,
+  enableThinking: boolean = false
 ): Promise<LLMResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -470,20 +475,30 @@ async function callAnthropic(
     );
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body: Record<string, any> = {
+    model: modelConfig.apiModel,
+    max_tokens: enableThinking ? 16384 : 8192,
+    system: systemContent,
+    messages: chatHistory,
+    stream: true,
+  };
+
+  if (enableThinking) {
+    headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
+    body.thinking = { type: "enabled", budget_tokens: 10000 };
+  }
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: modelConfig.apiModel,
-      max_tokens: 8192,
-      system: systemContent,
-      messages: chatHistory,
-      stream: true,
-    }),
+    headers,
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -615,6 +630,7 @@ async function processSSEStream(
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
+  let inThinkingBlock = false;
 
   // Batch writes: flush every ~200ms or 50 chars
   const BATCH_CHAR_THRESHOLD = 50;
@@ -651,8 +667,22 @@ async function processSSEStream(
 
           if (provider === "anthropic") {
             // Anthropic event types
-            if (parsed.type === "content_block_delta") {
-              contentBuffer += parsed.delta?.text || "";
+            if (parsed.type === "content_block_start") {
+              inThinkingBlock = parsed.content_block?.type === "thinking";
+              if (inThinkingBlock) {
+                contentBuffer += "<think>";
+              }
+            } else if (parsed.type === "content_block_stop") {
+              if (inThinkingBlock) {
+                contentBuffer += "</think>";
+                inThinkingBlock = false;
+              }
+            } else if (parsed.type === "content_block_delta") {
+              if (parsed.delta?.type === "thinking_delta") {
+                contentBuffer += parsed.delta?.thinking || "";
+              } else {
+                contentBuffer += parsed.delta?.text || "";
+              }
             } else if (parsed.type === "message_delta") {
               outputTokens = parsed.usage?.output_tokens || outputTokens;
             } else if (parsed.type === "message_start") {

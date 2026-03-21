@@ -16,6 +16,22 @@ interface OpenRouterModel {
   name: string;
   context_length?: number;
   pricing?: OpenRouterPricing;
+  architecture?: {
+    modality?: string;
+    tokenizer?: string;
+    instruct_type?: string | null;
+  };
+}
+
+/** Detect whether a model supports extended thinking / chain-of-thought. */
+function detectThinkingSupport(modelId: string): boolean {
+  // Anthropic Claude models with "thinking" capability
+  if (/^anthropic\/claude-3[.-]5-sonnet|^anthropic\/claude-3[.-]7|^anthropic\/claude-4/i.test(modelId)) return true;
+  // DeepSeek reasoning models
+  if (/deepseek.*r1|deepseek.*reasoner/i.test(modelId)) return true;
+  // QwQ / Qwen reasoning
+  if (/qwq|qwen.*coder/i.test(modelId)) return true;
+  return false;
 }
 
 interface OpenRouterResponse {
@@ -53,6 +69,7 @@ export const fetchPricing = internalAction({
       input_cache_read?: number;
       input_cache_write?: number;
       web_search?: number;
+      supportsThinking?: boolean;
     }> = [];
 
     for (const model of body.data) {
@@ -70,6 +87,7 @@ export const fetchPricing = internalAction({
         maxTokens: model.context_length ?? 0,
         prompt,
         completion,
+        supportsThinking: detectThinkingSupport(model.id) || undefined,
       };
 
       if (model.pricing.input_cache_read != null) {
@@ -114,6 +132,7 @@ export const upsertPricing = internalMutation({
         input_cache_read: v.optional(v.number()),
         input_cache_write: v.optional(v.number()),
         web_search: v.optional(v.number()),
+        supportsThinking: v.optional(v.boolean()),
       })
     ),
   },
@@ -135,6 +154,7 @@ export const upsertPricing = internalMutation({
           input_cache_read: u.input_cache_read,
           input_cache_write: u.input_cache_write,
           web_search: u.web_search,
+          supportsThinking: u.supportsThinking,
           updatedAt: now,
         });
       } else {
@@ -148,6 +168,7 @@ export const upsertPricing = internalMutation({
           input_cache_read: u.input_cache_read,
           input_cache_write: u.input_cache_write,
           web_search: u.web_search,
+          supportsThinking: u.supportsThinking,
           updatedAt: now,
         });
       }

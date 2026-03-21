@@ -107,6 +107,7 @@ export default defineSchema({
     name: v.optional(v.string()),
     maxTokens: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
+    supportsThinking: v.optional(v.boolean()),
     prompt: v.number(),
     completion: v.number(),
     input_cache_read: v.optional(v.number()),

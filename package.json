@@ -51,6 +51,7 @@
 		"svelte"
 	],
 	"dependencies": {
+		"@tailwindcss/typography": "^0.5.19",
 		"convex": "^1.33.0",
 		"convex-svelte": "^0.0.12",
 		"dompurify": "^3.3.3",

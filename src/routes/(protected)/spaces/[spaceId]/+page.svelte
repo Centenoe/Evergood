@@ -13,6 +13,7 @@
     import Pencil from "lucide-svelte/icons/pencil";
     import Check from "lucide-svelte/icons/check";
     import X from "lucide-svelte/icons/x";
+    import Brain from "lucide-svelte/icons/brain";
 
     const client = useConvexClient();
 
@@ -30,6 +31,13 @@
     let prompt = $state("");
     let submitting = $state(false);
     let settingsOpen = $state(false);
+    let enableThinking = $state(false);
+    let modelSupportsThinking = $state(false);
+
+    // Reset thinking toggle when model doesn't support it
+    $effect(() => {
+        if (!modelSupportsThinking) enableThinking = false;
+    });
 
     // Inline editing
     let editingTitle = $state(false);
@@ -81,6 +89,7 @@
                 sessionId,
                 model: selectedModel,
                 searchProvider: defaultSearchProvider ?? undefined,
+                enableThinking: enableThinking || undefined,
             });
             client.action(api.ai.generateTitle, { sessionId });
         } catch (error) {
@@ -244,7 +253,19 @@
                     {#snippet actions()}
                         <ModelSelector selected={selectedModel} onSelect={(m) => {
                             client.mutation(api.spaces.update, { id: spaceId, defaultModel: m });
-                        }} />
+                        }} bind:selectedSupportsThinking={modelSupportsThinking} />
+
+                        {#if modelSupportsThinking}
+                            <button
+                                onclick={() => (enableThinking = !enableThinking)}
+                                class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
+                                    {enableThinking ? 'bg-purple-500/15 text-purple-400' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                                title="Enable extended thinking"
+                            >
+                                <Brain size={14} />
+                                <span class="hidden sm:inline">Think</span>
+                            </button>
+                        {/if}
                     {/snippet}
                 </ChatInput>
             </div>

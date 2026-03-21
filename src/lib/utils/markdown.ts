@@ -5,6 +5,9 @@ import { createHighlighter, type Highlighter } from 'shiki';
 let highlighter: Highlighter | null = null;
 let highlighterPromise: Promise<void> | null = null;
 
+const COPY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const DOWNLOAD_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>';
+
 const SHIKI_LANGS = [
 	'javascript', 'typescript', 'python', 'rust', 'go', 'html', 'css',
 	'json', 'bash', 'shell', 'markdown', 'svelte', 'jsx', 'tsx',
@@ -21,6 +24,15 @@ export function initHighlighter(): Promise<void> {
 		highlighter = h;
 	});
 	return highlighterPromise;
+}
+
+function normalizeCodeLanguage(lang?: string): string {
+	const normalized = lang?.trim().toLowerCase().replace(/^language-/, '') ?? '';
+	return normalized || 'text';
+}
+
+function getDownloadTooltip(language: string): string {
+	return `Download ${language} file`;
 }
 
 function highlightCode(code: string, lang: string): string {
@@ -46,10 +58,9 @@ const marked = new Marked();
 
 const renderer: Partial<import('marked').RendererObject> = {
 	code({ text, lang }: { text: string; lang?: string }) {
-		const language = lang ?? '';
+		const language = normalizeCodeLanguage(lang);
 		const highlighted = highlightCode(text, language);
-		const langLabel = language ? `<span class="code-lang-label">${language}</span>` : '';
-		return `<div class="code-block-wrapper">${langLabel}<button class="code-copy-btn" title="Copy code" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>${highlighted}</div>`;
+		return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-lang-label">${language}</span><div class="code-block-actions"><button type="button" class="code-action-btn eg-tooltip-trigger code-copy-btn" title="Copy" aria-label="Copy code" data-tooltip="Copy">${COPY_ICON_SVG}</button><button type="button" class="code-action-btn eg-tooltip-trigger download-code-btn" title="${getDownloadTooltip(language)}" aria-label="Download code" data-lang="${language}" data-tooltip="${getDownloadTooltip(language)}">${DOWNLOAD_ICON_SVG}</button></div></div>${highlighted}</div>`;
 	},
 };
 
@@ -77,7 +88,7 @@ export function renderMarkdown(text: string): string {
 			'style', 'aria-label', 'role', 'tabindex',
 			'width', 'height', 'viewBox', 'fill', 'stroke', 'stroke-width',
 			'stroke-linecap', 'stroke-linejoin', 'd', 'x', 'y', 'rx', 'ry',
-			'cx', 'cy', 'r',
+			'cx', 'cy', 'r', 'data-lang', 'data-tooltip', 'type', 'aria-hidden',
 		],
 		ADD_ATTR: ['target'],
 	});
