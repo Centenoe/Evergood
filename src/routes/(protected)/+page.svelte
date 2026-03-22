@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { useConvexClient } from "convex-svelte";
+    import { useConvexClient, useQuery } from "convex-svelte";
     import { api } from "$convex/_generated/api";
     import { goto } from "$app/navigation";
     import ModelSelector from "$lib/components/ModelSelector.svelte";
@@ -8,12 +8,20 @@
 
 
     const client = useConvexClient();
+    const userPreferencesQuery = useQuery(api.userPreferences.get, () => ({}));
 
     let prompt = $state("");
-    let selectedModel = $state("gpt-4o");
+    let selectedModel = $state("gpt-5-nano");
     let submitting = $state(false);
     let enableThinking = $state(false);
     let modelSupportsThinking = $state(false);
+    let selectedModelTouched = $state(false);
+
+    $effect(() => {
+        if (!selectedModelTouched && userPreferencesQuery.data?.defaultModel) {
+            selectedModel = userPreferencesQuery.data.defaultModel;
+        }
+    });
 
     // Reset thinking toggle when model doesn't support it
     $effect(() => {
@@ -23,14 +31,26 @@
     async function handleSubmit() {
         if (!prompt.trim() || submitting) return;
         const userMessage = prompt.trim();
+        const defaultSearchProvider = userPreferencesQuery.data?.defaultSearchProvider ?? "off";
+        const defaultSearchPastChats = userPreferencesQuery.data?.defaultSearchPastChats ?? false;
         prompt = "";
         submitting = true;
 
         try {
-            const sessionId = await client.mutation(api.sessions.create, { model: selectedModel });
+            const sessionId = await client.mutation(api.sessions.create, {
+                model: selectedModel,
+                searchProvider: defaultSearchProvider,
+                searchPastChats: defaultSearchPastChats,
+            });
             await client.mutation(api.messages.send, { sessionId, content: userMessage, model: selectedModel });
             goto(`/chat/${sessionId}`);
-            client.action(api.ai.chat, { sessionId, model: selectedModel, enableThinking: enableThinking || undefined });
+            client.action(api.ai.chat, {
+                sessionId,
+                model: selectedModel,
+                searchPastChats: defaultSearchPastChats,
+                searchProvider: defaultSearchProvider !== "off" ? defaultSearchProvider : undefined,
+                enableThinking: enableThinking || undefined,
+            });
             client.action(api.ai.generateTitle, { sessionId });
         } catch (error) {
             console.error("Failed to create chat:", error);
@@ -59,7 +79,10 @@
             <!-- Input -->
             <ChatInput bind:value={prompt} disabled={submitting} onsubmit={handleSubmit}>
                 {#snippet actions()}
-                    <ModelSelector selected={selectedModel} onSelect={(m) => (selectedModel = m)} bind:selectedSupportsThinking={modelSupportsThinking} />
+                    <ModelSelector selected={selectedModel} onSelect={(m) => {
+                        selectedModelTouched = true;
+                        selectedModel = m;
+                    }} bind:selectedSupportsThinking={modelSupportsThinking} />
 
                     {#if modelSupportsThinking}
                         <button

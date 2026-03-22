@@ -27,7 +27,7 @@ interface TempChatState {
 
 function loadState(): TempChatState {
 	if (typeof sessionStorage === 'undefined') {
-		return { active: false, messages: [], model: 'gpt-4o' };
+		return { active: false, messages: [], model: 'gpt-5-nano' };
 	}
 	try {
 		const raw = sessionStorage.getItem(STORAGE_KEY);
@@ -38,7 +38,7 @@ function loadState(): TempChatState {
 	} catch {
 		// Corrupted data — start fresh
 	}
-	return { active: false, messages: [], model: 'gpt-4o' };
+	return { active: false, messages: [], model: 'gpt-5-nano' };
 }
 
 function saveState(state: TempChatState) {
@@ -52,7 +52,7 @@ function saveState(state: TempChatState) {
 
 let active = $state(false);
 let messages = $state<TempMessage[]>([]);
-let model = $state('gpt-4o');
+let model = $state('gpt-5-nano');
 let isStreaming = $state(false);
 
 export const tempChatStore = {
@@ -81,7 +81,7 @@ export const tempChatStore = {
 	start(selectedModel?: string) {
 		active = true;
 		messages = [];
-		model = selectedModel ?? 'gpt-4o';
+		model = selectedModel ?? 'gpt-5-nano';
 		isStreaming = false;
 		saveState({ active, messages, model });
 	},
@@ -90,7 +90,7 @@ export const tempChatStore = {
 	end() {
 		active = false;
 		messages = [];
-		model = 'gpt-4o';
+		model = 'gpt-5-nano';
 		isStreaming = false;
 		if (typeof sessionStorage !== 'undefined') {
 			sessionStorage.removeItem(STORAGE_KEY);

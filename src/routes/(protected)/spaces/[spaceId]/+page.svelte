@@ -23,6 +23,7 @@
         api.spaces.get,
         () => (spaceId ? { id: spaceId } : "skip"),
     );
+    const userPreferencesQuery = useQuery(api.userPreferences.get, () => ({}));
     const sessionsQuery = useQuery(
         api.sessions.list,
         () => (spaceId ? { spaceId } : "skip"),
@@ -45,8 +46,15 @@
     let editingDesc = $state(false);
     let editDescValue = $state("");
 
-    let selectedModel = $derived(spaceQuery.data?.defaultModel ?? "gpt-4o");
-    let defaultSearchProvider = $derived(spaceQuery.data?.webSearchDefault);
+    let selectedModel = $derived(spaceQuery.data?.defaultModel ?? userPreferencesQuery.data?.defaultModel ?? "gpt-5-nano");
+    let defaultSearchProvider = $derived.by(() => {
+        const spaceDefault = spaceQuery.data?.webSearchDefault;
+        if (spaceDefault === "perplexity" || spaceDefault === "tavily") {
+            return spaceDefault;
+        }
+        return userPreferencesQuery.data?.defaultSearchProvider ?? "off";
+    });
+    let defaultSearchPastChats = $derived(userPreferencesQuery.data?.defaultSearchPastChats ?? false);
 
     function getProviderColor(modelId: string): string {
         if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3") || modelId.startsWith("o4") || modelId.startsWith("chatgpt-"))
@@ -78,6 +86,8 @@
             const sessionId = await client.mutation(api.sessions.create, {
                 model: selectedModel,
                 spaceId,
+                searchProvider: defaultSearchProvider,
+                searchPastChats: defaultSearchPastChats,
             });
             await client.mutation(api.messages.send, {
                 sessionId,
@@ -88,7 +98,8 @@
             client.action(api.ai.chat, {
                 sessionId,
                 model: selectedModel,
-                searchProvider: defaultSearchProvider ?? undefined,
+                searchPastChats: defaultSearchPastChats,
+                searchProvider: defaultSearchProvider !== "off" ? defaultSearchProvider : undefined,
                 enableThinking: enableThinking || undefined,
             });
             client.action(api.ai.generateTitle, { sessionId });

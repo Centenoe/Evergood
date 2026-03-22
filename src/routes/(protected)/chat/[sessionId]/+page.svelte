@@ -62,9 +62,7 @@
 
     let prompt = $state("");
     let sending = $state(false);
-    let searchProvider = $state<"off" | "perplexity" | "tavily">("off");
     let searchDropdownOpen = $state(false);
-    let searchPastChats = $state(false);
     let debugOpen = $state(false);
     let messagesContainer: HTMLDivElement | undefined = $state(undefined);
     let enableThinking = $state(false);
@@ -75,7 +73,11 @@
         if (!modelSupportsThinking) enableThinking = false;
     });
 
-    let currentModel = $derived(sessionQuery.data?.model ?? "gpt-4o");
+    let currentModel = $derived(sessionQuery.data?.model ?? "gpt-5-nano");
+    let searchProvider = $derived(
+        (sessionQuery.data?.searchProvider as "off" | "perplexity" | "tavily" | undefined) ?? "off",
+    );
+    let searchPastChats = $derived(sessionQuery.data?.searchPastChats ?? false);
     let isStreaming = $derived(streamingQuery.data?.isStreaming === true);
     let displayMessages = $derived(messagesQuery.data ?? []);
 
@@ -111,9 +113,29 @@
 
     let hasAnySearch = $derived(providers.perplexity || providers.tavily);
 
-    function selectSearchProvider(provider: "off" | "perplexity" | "tavily") {
-        searchProvider = provider;
+    async function selectSearchProvider(provider: "off" | "perplexity" | "tavily") {
         searchDropdownOpen = false;
+        if (!sessionId) return;
+        try {
+            await client.mutation(api.sessions.updatePreferences, {
+                id: sessionId,
+                searchProvider: provider,
+            });
+        } catch (error) {
+            console.error("Failed to update search provider:", error);
+        }
+    }
+
+    async function toggleSearchPastChats() {
+        if (!sessionId) return;
+        try {
+            await client.mutation(api.sessions.updatePreferences, {
+                id: sessionId,
+                searchPastChats: !searchPastChats,
+            });
+        } catch (error) {
+            console.error("Failed to update history setting:", error);
+        }
     }
 
     let titleGenerated = $state(false);
@@ -229,7 +251,7 @@
 
                     <!-- History toggle -->
                     <button
-                        onclick={() => (searchPastChats = !searchPastChats)}
+                        onclick={toggleSearchPastChats}
                         class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
                             {searchPastChats ? 'bg-eg-accent/15 text-eg-accent' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
                         title="Search past conversations for context"

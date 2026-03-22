@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { useConvexClient } from 'convex-svelte';
+	import { useConvexClient, useQuery } from 'convex-svelte';
 	import { api } from '$convex/_generated/api';
 	import { tempChatStore } from '$lib/stores/tempChat.svelte';
 	import type { TempMessage } from '$lib/stores/tempChat.svelte';
@@ -12,16 +12,23 @@
 	import { goto } from '$app/navigation';
 
 	const client = useConvexClient();
+	const userPreferencesQuery = useQuery(api.userPreferences.get, () => ({}));
 
 	let prompt = $state('');
 	let sending = $state(false);
 	let errorMessage = $state('');
 	let messagesContainer: HTMLDivElement | undefined = $state(undefined);
+	let tempChatReady = $state(false);
 
 	onMount(() => {
 		tempChatStore.init();
+		tempChatReady = true;
+	});
+
+	$effect(() => {
+		if (!tempChatReady || userPreferencesQuery.data === undefined) return;
 		if (!tempChatStore.active) {
-			tempChatStore.start();
+			tempChatStore.start(userPreferencesQuery.data.defaultModel);
 		}
 	});
 

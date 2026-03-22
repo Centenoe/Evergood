@@ -26,6 +26,7 @@ import type * as sessions from "../sessions.js";
 import type * as spaces from "../spaces.js";
 import type * as summarize from "../summarize.js";
 import type * as usageLogs from "../usageLogs.js";
+import type * as userPreferences from "../userPreferences.js";
 
 import type {
   ApiFromModules,
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   spaces: typeof spaces;
   summarize: typeof summarize;
   usageLogs: typeof usageLogs;
+  userPreferences: typeof userPreferences;
 }>;
 
 /**

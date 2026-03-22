@@ -52,9 +52,7 @@
     );
 
     async function createNewThread() {
-        const sessionId = await client.mutation(api.sessions.create, {
-            model: "gpt-4o",
-        });
+        const sessionId = await client.mutation(api.sessions.create, {});
         onCloseMobile?.();
         goto(`/chat/${sessionId}`);
     }
@@ -199,6 +197,15 @@
             >
                 <FolderOpen size={16} />
                 <span>Spaces</span>
+            </button>
+
+            <button
+                onclick={() => navigateTo("/temp")}
+                class="flex items-center gap-2.5 w-full px-3 py-2 text-sm rounded-lg transition-colors
+                    {$page.url.pathname === '/temp' ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
+            >
+                <Clock size={16} />
+                <span>Temp Chat</span>
             </button>
 
             <button

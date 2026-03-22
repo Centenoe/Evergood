@@ -308,7 +308,7 @@ export const generateTitle = action({
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: "gpt-4o-mini",
+            model: "gpt-5-nano",
             messages: [
               {
                 role: "system",

@@ -27,6 +27,7 @@
         return {};
     });
     const sessionsQuery = useQuery(api.sessions.list, () => ({}));
+    const userPreferencesQuery = useQuery(api.userPreferences.get, () => ({}));
 
     let addingMemory = $state(false);
     let newCategory = $state("stack");
@@ -46,6 +47,18 @@
     let allModels = $state<ModelInfo[]>([]);
     let enabledModelIds = $state<Set<string>>(new Set());
     let modelsLoading = $state(true);
+    let defaultModel = $state("gpt-5-nano");
+    let defaultSearchProvider = $state<"off" | "perplexity" | "tavily">("off");
+    let defaultSearchPastChats = $state(false);
+    let chatDefaultsLoaded = $state(false);
+    let chatDefaultsSaving = $state(false);
+    let chatDefaultsError = $state("");
+    let providers = $state<{ openai: boolean; anthropic: boolean; perplexity: boolean; tavily: boolean }>({
+        openai: false,
+        anthropic: false,
+        perplexity: false,
+        tavily: false,
+    });
 
     const providerLabels: Record<string, string> = {
         openai: "OpenAI",
@@ -64,10 +77,18 @@
 
     let allChecked = $derived(allModels.length > 0 && enabledModelIds.size === allModels.length);
     let noneChecked = $derived(enabledModelIds.size === 0);
+    let chatDefaultsDirty = $derived(
+        chatDefaultsLoaded && userPreferencesQuery.data
+            ? defaultModel !== userPreferencesQuery.data.defaultModel ||
+              defaultSearchProvider !== userPreferencesQuery.data.defaultSearchProvider ||
+              defaultSearchPastChats !== userPreferencesQuery.data.defaultSearchPastChats
+            : false,
+    );
 
     onMount(async () => {
         try {
             allModels = await client.query(api.available_models.listAvailable, {});
+            providers = await client.action(api.providers.getAvailable, {});
             const saved = localStorage.getItem("evergood-enabled-models");
             if (saved) {
                 try {
@@ -82,6 +103,15 @@
         } catch {
         } finally {
             modelsLoading = false;
+        }
+    });
+
+    $effect(() => {
+        if (!chatDefaultsLoaded && userPreferencesQuery.data) {
+            defaultModel = userPreferencesQuery.data.defaultModel;
+            defaultSearchProvider = userPreferencesQuery.data.defaultSearchProvider;
+            defaultSearchPastChats = userPreferencesQuery.data.defaultSearchPastChats;
+            chatDefaultsLoaded = true;
         }
     });
 
@@ -101,6 +131,22 @@
     function deselectAll() {
         enabledModelIds = new Set();
         localStorage.setItem("evergood-enabled-models", JSON.stringify([]));
+    }
+
+    async function saveChatDefaults() {
+        chatDefaultsSaving = true;
+        chatDefaultsError = "";
+        try {
+            await client.mutation(api.userPreferences.update, {
+                defaultModel,
+                defaultSearchProvider,
+                defaultSearchPastChats,
+            });
+        } catch (error) {
+            chatDefaultsError = error instanceof Error ? error.message : "Failed to save chat defaults";
+        } finally {
+            chatDefaultsSaving = false;
+        }
     }
 
     const categories = ["stack", "project", "preference", "work", "personal", "goal"];
@@ -156,6 +202,105 @@
 
 <main class="flex-1 min-h-0 overflow-y-auto p-10 bg-eg-bg">
     <h1 class="text-3xl font-semibold mb-6 text-eg-text">Settings</h1>
+
+    <!-- Chat Defaults -->
+    <div class="max-w-2xl border border-eg-border rounded-xl p-6 mb-8">
+        <div class="flex items-center justify-between mb-4 gap-4">
+            <div>
+                <div class="flex items-center gap-3 mb-1">
+                    <Globe size={22} class="text-eg-info" />
+                    <h2 class="text-xl font-medium text-eg-text">Chat Defaults</h2>
+                </div>
+                <p class="text-eg-text-secondary text-sm">
+                    New chats start from these defaults. Existing chats keep the last model, web search, and history settings used inside that chat.
+                </p>
+            </div>
+            <button
+                onclick={saveChatDefaults}
+                disabled={!chatDefaultsDirty || chatDefaultsSaving}
+                class="px-4 py-2 text-sm font-medium bg-eg-accent text-eg-accent-text rounded-lg hover:bg-eg-accent-hover transition-colors disabled:opacity-50 disabled:hover:bg-eg-accent"
+            >
+                {chatDefaultsSaving ? "Saving..." : "Save Defaults"}
+            </button>
+        </div>
+
+        {#if chatDefaultsError}
+            <div class="mb-4 rounded-lg border border-eg-danger/30 bg-eg-danger/10 px-3 py-2 text-sm text-eg-danger">
+                {chatDefaultsError}
+            </div>
+        {/if}
+
+        <div class="space-y-5">
+            <div>
+                <div class="block text-sm font-medium text-eg-text mb-2">Default Model</div>
+                {#if modelsLoading}
+                    <div class="flex items-center gap-2 text-sm text-eg-text-tertiary">
+                        <span class="w-4 h-4 border-2 border-eg-border border-t-transparent rounded-full animate-spin"></span>
+                        Loading models...
+                    </div>
+                {:else if allModels.length > 0}
+                    <select
+                        bind:value={defaultModel}
+                        class="w-full bg-eg-bg-secondary border border-eg-border rounded-lg px-3 py-2.5 text-sm text-eg-text outline-none focus:border-eg-accent transition-colors"
+                    >
+                        {#each Object.entries(groupedModels) as [provider, models]}
+                            <optgroup label={providerLabels[provider] ?? provider}>
+                                {#each models as model}
+                                    <option value={model.id}>{model.label}</option>
+                                {/each}
+                            </optgroup>
+                        {/each}
+                    </select>
+                {:else}
+                    <p class="text-sm text-eg-text-tertiary">No models available.</p>
+                {/if}
+            </div>
+
+            <div>
+                <div class="block text-sm font-medium text-eg-text mb-2">Default Web Search</div>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        onclick={() => (defaultSearchProvider = "off")}
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors {defaultSearchProvider === 'off' ? 'bg-eg-accent text-eg-accent-text' : 'bg-eg-bg-secondary text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                    >
+                        Off
+                    </button>
+                    <button
+                        onclick={() => (defaultSearchProvider = "perplexity")}
+                        disabled={!providers.perplexity}
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-40 {defaultSearchProvider === 'perplexity' ? 'bg-eg-accent text-eg-accent-text' : 'bg-eg-bg-secondary text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                    >
+                        Perplexity
+                    </button>
+                    <button
+                        onclick={() => (defaultSearchProvider = "tavily")}
+                        disabled={!providers.tavily}
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-40 {defaultSearchProvider === 'tavily' ? 'bg-eg-accent text-eg-accent-text' : 'bg-eg-bg-secondary text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
+                    >
+                        Tavily
+                    </button>
+                </div>
+                <p class="mt-2 text-[11px] text-eg-text-tertiary">
+                    Disabled providers are not currently configured in this workspace.
+                </p>
+            </div>
+
+            <div class="flex items-start justify-between gap-4 rounded-lg border border-eg-border bg-eg-bg-secondary px-4 py-3">
+                <div>
+                    <div class="text-sm font-medium text-eg-text">Default History Context</div>
+                    <p class="mt-1 text-xs text-eg-text-tertiary">
+                        New chats start with “Search past conversations for context” {defaultSearchPastChats ? "enabled" : "disabled"}.
+                    </p>
+                </div>
+                <button
+                    onclick={() => (defaultSearchPastChats = !defaultSearchPastChats)}
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors {defaultSearchPastChats ? 'bg-eg-accent text-eg-accent-text' : 'bg-eg-bg-tertiary text-eg-text-secondary hover:bg-eg-border'}"
+                >
+                    {defaultSearchPastChats ? "On" : "Off"}
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Memory & Profile -->
     <div class="max-w-2xl border border-eg-border rounded-xl p-6 mb-8">

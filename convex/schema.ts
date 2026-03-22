@@ -2,6 +2,17 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  userPreferences: defineTable({
+    userId: v.string(),
+    defaultModel: v.optional(v.string()),
+    defaultSearchProvider: v.optional(
+      v.union(v.literal("off"), v.literal("perplexity"), v.literal("tavily"))
+    ),
+    defaultSearchPastChats: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   spaces: defineTable({
     userId: v.string(),
     name: v.string(),
@@ -23,6 +34,10 @@ export default defineSchema({
     title: v.string(),
     model: v.string(),
     searchEnabled: v.boolean(),
+    searchProvider: v.optional(
+      v.union(v.literal("off"), v.literal("perplexity"), v.literal("tavily"))
+    ),
+    searchPastChats: v.optional(v.boolean()),
     bookmarked: v.optional(v.boolean()),
     createdAt: v.number(),
     lastActiveAt: v.number(),

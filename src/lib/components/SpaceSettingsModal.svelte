@@ -122,7 +122,7 @@
             <input
                 id="default-model"
                 bind:value={defaultModel}
-                placeholder="e.g., gpt-4o"
+                placeholder="e.g., gpt-5-nano"
                 class="w-full bg-eg-bg border border-eg-border rounded-lg px-3 py-2 text-sm text-eg-text placeholder-eg-text-tertiary outline-none focus:border-eg-accent transition-colors"
             />
         </div>
