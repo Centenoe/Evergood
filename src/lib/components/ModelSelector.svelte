@@ -33,6 +33,7 @@
     >([]);
     let loading = $state(true);
     let fetchError = $state<string | null>(null);
+    let hasCustomOrder = $state(false);
 
     async function fetchModels() {
         loading = true;
@@ -40,20 +41,42 @@
         try {
             const allModels = await client.query(api.available_models.listAvailable, {});
             const enabledRaw = localStorage.getItem("evergood-enabled-models");
+            let filtered = allModels;
             if (enabledRaw) {
                 try {
                     const enabledIds: string[] = JSON.parse(enabledRaw);
                     if (Array.isArray(enabledIds) && enabledIds.length > 0) {
-                        models = allModels.filter((m: { id: string }) => enabledIds.includes(m.id));
-                        if (models.length === 0) models = allModels;
-                    } else {
-                        models = allModels;
+                        filtered = allModels.filter((m: { id: string }) => enabledIds.includes(m.id));
+                        if (filtered.length === 0) filtered = allModels;
                     }
                 } catch {
-                    models = allModels;
+                    // keep all
+                }
+            }
+
+            // Apply custom order if present
+            const orderRaw = localStorage.getItem("evergood-model-order");
+            if (orderRaw) {
+                try {
+                    const order: string[] = JSON.parse(orderRaw);
+                    if (Array.isArray(order) && order.length > 0) {
+                        const ordered = order
+                            .map((id) => filtered.find((m: { id: string }) => m.id === id))
+                            .filter((m): m is (typeof filtered)[number] => m !== undefined);
+                        const unranked = filtered.filter((m: { id: string }) => !order.includes(m.id));
+                        models = [...ordered, ...unranked];
+                        hasCustomOrder = ordered.length > 0;
+                    } else {
+                        models = filtered;
+                        hasCustomOrder = false;
+                    }
+                } catch {
+                    models = filtered;
+                    hasCustomOrder = false;
                 }
             } else {
-                models = allModels;
+                models = filtered;
+                hasCustomOrder = false;
             }
         } catch (e) {
             console.error("Failed to fetch models:", e);
@@ -105,6 +128,12 @@
               )
             : models;
 
+        if (hasCustomOrder) {
+            // Flat ordered list — no grouping
+            return filtered;
+        }
+
+        // Provider-grouped display
         const groups: Record<string, typeof models> = {};
         for (const m of filtered) {
             if (!groups[m.provider]) groups[m.provider] = [];
@@ -190,11 +219,9 @@
                 </div>
 
                 <div class="overflow-y-auto flex-1">
-                    {#each Object.entries(filteredModels) as [provider, providerModels]}
-                        <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-eg-text-tertiary bg-eg-bg-secondary sticky top-0">
-                            {providerLabels[provider] ?? provider}
-                        </div>
-                        {#each providerModels as model}
+                    {#if hasCustomOrder && Array.isArray(filteredModels)}
+                        <!-- Flat ordered list when user has set a custom order -->
+                        {#each filteredModels as model}
                             <button
                                 onclick={() => handleSelect(model.id)}
                                 class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''}"
@@ -218,10 +245,43 @@
                                 {/if}
                             </button>
                         {/each}
-                    {/each}
-
-                    {#if Object.keys(filteredModels).length === 0}
-                        <div class="px-3 py-4 text-sm text-eg-text-tertiary text-center">No matching models</div>
+                        {#if filteredModels.length === 0}
+                            <div class="px-3 py-4 text-sm text-eg-text-tertiary text-center">No matching models</div>
+                        {/if}
+                    {:else if !Array.isArray(filteredModels)}
+                        <!-- Provider-grouped display (default, no custom order) -->
+                        {#each Object.entries(filteredModels) as [provider, providerModels]}
+                            <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-eg-text-tertiary bg-eg-bg-secondary sticky top-0">
+                                {providerLabels[provider] ?? provider}
+                            </div>
+                            {#each providerModels as model}
+                                <button
+                                    onclick={() => handleSelect(model.id)}
+                                    class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''}"
+                                >
+                                    <span class="w-2 h-2 rounded-full flex-shrink-0 {providerColors[model.provider] ?? 'bg-eg-text-tertiary'}"></span>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-medium text-eg-text truncate">{model.label}</div>
+                                        {#if model.id !== model.label}
+                                            <div class="text-[11px] text-eg-text-tertiary truncate">{model.id}</div>
+                                        {/if}
+                                        {#if model.inputCostPer1M > 0 || model.outputCostPer1M > 0}
+                                            <div class="text-[10px] text-eg-text-tertiary mt-0.5">
+                                                ${model.inputCostPer1M.toFixed(2)} in / ${model.outputCostPer1M.toFixed(2)} out per 1M
+                                            </div>
+                                        {:else}
+                                            <div class="text-[10px] text-eg-text-tertiary mt-0.5 italic">No pricing data</div>
+                                        {/if}
+                                    </div>
+                                    {#if model.id === selected}
+                                        <span class="text-eg-accent text-xs">&#10003;</span>
+                                    {/if}
+                                </button>
+                            {/each}
+                        {/each}
+                        {#if Object.keys(filteredModels).length === 0}
+                            <div class="px-3 py-4 text-sm text-eg-text-tertiary text-center">No matching models</div>
+                        {/if}
                     {/if}
                 </div>
             {/if}

@@ -41,6 +41,12 @@
             ? $page.url.pathname.split("/chat/")[1]
             : null,
     );
+    let isSettingsRoute = $derived($page.url.pathname.startsWith("/settings"));
+    const settingsNavItems = [
+        { href: "/settings/general", label: "General" },
+        { href: "/settings/chat-defaults", label: "Chat Defaults" },
+        { href: "/settings/memory", label: "Memory & Profile" },
+    ];
 
     // General sessions (not in any space, not bookmarked)
     let generalSessions = $derived(
@@ -218,45 +224,66 @@
             </button>
         </nav>
 
-        <!-- Search -->
-        <div class="mb-3 px-1">
-            {#if searchMode}
-                <div class="flex items-center gap-1">
-                    <div class="relative flex-1">
-                        <Search
-                            size={14}
-                            class="absolute left-2.5 top-1/2 -translate-y-1/2 text-eg-text-tertiary"
-                        />
-                        <input
-                            bind:value={searchQuery}
-                            placeholder="Search messages..."
-                            class="w-full pl-8 pr-3 py-2 text-sm bg-eg-bg-tertiary rounded-lg outline-none focus:ring-1 focus:ring-eg-text-tertiary text-eg-text placeholder:text-eg-text-tertiary"
-                        />
-                    </div>
-                    <button
-                        onclick={() => {
-                            searchMode = false;
-                            searchQuery = "";
-                        }}
-                        class="p-1.5 text-eg-text-tertiary hover:text-eg-text rounded-md transition-colors"
-                    >
-                        <X size={16} />
-                    </button>
+        {#if isSettingsRoute}
+            <div class="mb-3 px-1">
+                <div class="px-3 py-2">
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-eg-text-tertiary">Settings</div>
                 </div>
-            {:else}
-                <button
-                    onclick={() => (searchMode = true)}
-                    class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary rounded-lg transition-colors"
-                >
-                    <Search size={14} />
-                    <span>Search chats...</span>
-                </button>
-            {/if}
-        </div>
+            </div>
+        {:else}
+            <!-- Search -->
+            <div class="mb-3 px-1">
+                {#if searchMode}
+                    <div class="flex items-center gap-1">
+                        <div class="relative flex-1">
+                            <Search
+                                size={14}
+                                class="absolute left-2.5 top-1/2 -translate-y-1/2 text-eg-text-tertiary"
+                            />
+                            <input
+                                bind:value={searchQuery}
+                                placeholder="Search messages..."
+                                class="w-full pl-8 pr-3 py-2 text-sm bg-eg-bg-tertiary rounded-lg outline-none focus:ring-1 focus:ring-eg-text-tertiary text-eg-text placeholder:text-eg-text-tertiary"
+                            />
+                        </div>
+                        <button
+                            onclick={() => {
+                                searchMode = false;
+                                searchQuery = "";
+                            }}
+                            class="p-1.5 text-eg-text-tertiary hover:text-eg-text rounded-md transition-colors"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                {:else}
+                    <button
+                        onclick={() => (searchMode = true)}
+                        class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary rounded-lg transition-colors"
+                    >
+                        <Search size={14} />
+                        <span>Search chats...</span>
+                    </button>
+                {/if}
+            </div>
+        {/if}
 
-        <!-- Chat History: scrollable area -->
+        <!-- Middle content area -->
         <div class="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
-            {#if searchMode && searchQuery.trim()}
+            {#if isSettingsRoute}
+                <div class="space-y-1">
+                    {#each settingsNavItems as item}
+                        <button
+                            onclick={() => navigateTo(item.href)}
+                            class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors
+                                {$page.url.pathname === item.href ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
+                        >
+                            <span class="h-1.5 w-1.5 rounded-full {$page.url.pathname === item.href ? 'bg-eg-accent' : 'bg-eg-text-tertiary'}"></span>
+                            <span>{item.label}</span>
+                        </button>
+                    {/each}
+                </div>
+            {:else if searchMode && searchQuery.trim()}
                 <!-- Search results -->
                 {#if searchResults.isLoading}
                     <p class="text-xs text-eg-text-tertiary px-2 py-4">Searching...</p>
@@ -358,7 +385,7 @@
             <button
                 onclick={() => navigateTo("/settings")}
                 class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors
-                    {$page.url.pathname === '/settings' ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
+                    {$page.url.pathname.startsWith('/settings') ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
             >
                 <Settings size={16} />
                 <span>Settings</span>

@@ -8,10 +8,15 @@
 
     let { checked = $bindable(false), disabled = false, onchange, label }: Props = $props();
 
-    function toggle() {
+    function toggle(event?: MouseEvent | KeyboardEvent) {
+        event?.stopPropagation();
         if (disabled) return;
         checked = !checked;
         onchange?.(checked);
+    }
+
+    function handleKeydown(event: KeyboardEvent) {
+        event.stopPropagation();
     }
 </script>
 
@@ -21,6 +26,7 @@
     aria-checked={checked}
     {disabled}
     onclick={toggle}
+    onkeydown={handleKeydown}
     class="inline-flex items-center gap-2.5 {disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}"
 >
     <span
