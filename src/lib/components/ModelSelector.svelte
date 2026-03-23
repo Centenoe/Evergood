@@ -31,6 +31,8 @@
             supportsThinking: boolean;
         }>
     >([]);
+    let allFetchedModels = $state<typeof models>([]);
+    let enabledModelIds = $state<Set<string>>(new Set());
     let loading = $state(true);
     let fetchError = $state<string | null>(null);
     let hasCustomOrder = $state(false);
@@ -40,18 +42,26 @@
         fetchError = null;
         try {
             const allModels = await client.query(api.available_models.listAvailable, {});
+            allFetchedModels = allModels;
+
             const enabledRaw = localStorage.getItem("evergood-enabled-models");
             let filtered = allModels;
+            let hasEnabledFilter = false;
             if (enabledRaw) {
                 try {
                     const enabledIds: string[] = JSON.parse(enabledRaw);
                     if (Array.isArray(enabledIds) && enabledIds.length > 0) {
+                        enabledModelIds = new Set(enabledIds);
+                        hasEnabledFilter = true;
                         filtered = allModels.filter((m: { id: string }) => enabledIds.includes(m.id));
                         if (filtered.length === 0) filtered = allModels;
                     }
                 } catch {
                     // keep all
                 }
+            }
+            if (!hasEnabledFilter) {
+                enabledModelIds = new Set(allModels.map((m: { id: string }) => m.id));
             }
 
             // Apply custom order if present
@@ -104,7 +114,7 @@
     };
 
     let selectedModel = $derived(
-        models.find((m) => m.id === selected) ?? {
+        models.find((m) => m.id === selected) ?? allFetchedModels.find((m) => m.id === selected) ?? {
             id: selected,
             label: selected,
             provider: "openai",
@@ -113,20 +123,22 @@
 
     // Sync bindable thinking capability when selection changes
     $effect(() => {
-        const found = models.find((m) => m.id === selected);
+        const found = allFetchedModels.find((m) => m.id === selected) ?? models.find((m) => m.id === selected);
         selectedSupportsThinking = found?.supportsThinking ?? false;
     });
 
     let filteredModels = $derived.by(() => {
         const q = searchFilter.toLowerCase();
+        // When searching, search across ALL models (not just enabled subset)
+        const sourceModels = q ? allFetchedModels : models;
         const filtered = q
-            ? models.filter(
+            ? sourceModels.filter(
                   (m) =>
                       m.label.toLowerCase().includes(q) ||
                       m.id.toLowerCase().includes(q) ||
                       m.provider.toLowerCase().includes(q),
               )
-            : models;
+            : sourceModels;
 
         if (hasCustomOrder) {
             // Flat ordered list — no grouping
@@ -224,7 +236,7 @@
                         {#each filteredModels as model}
                             <button
                                 onclick={() => handleSelect(model.id)}
-                                class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''}"
+                                class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''} {!enabledModelIds.has(model.id) ? 'opacity-60' : ''}"
                             >
                                 <span class="w-2 h-2 rounded-full flex-shrink-0 {providerColors[model.provider] ?? 'bg-eg-text-tertiary'}"></span>
                                 <div class="flex-1 min-w-0">
@@ -257,7 +269,7 @@
                             {#each providerModels as model}
                                 <button
                                     onclick={() => handleSelect(model.id)}
-                                    class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''}"
+                                    class="w-full text-left px-3 py-2.5 text-sm hover:bg-eg-bg-tertiary transition-colors flex items-center gap-2.5 {model.id === selected ? 'bg-eg-bg-tertiary' : ''} {!enabledModelIds.has(model.id) ? 'opacity-60' : ''}"
                                 >
                                     <span class="w-2 h-2 rounded-full flex-shrink-0 {providerColors[model.provider] ?? 'bg-eg-text-tertiary'}"></span>
                                     <div class="flex-1 min-w-0">

@@ -5,7 +5,7 @@
     import type { Id } from "$convex/_generated/dataModel";
     import { goto } from "$app/navigation";
     import ChatInput from "$lib/components/ChatInput.svelte";
-    import ModelSelector from "$lib/components/ModelSelector.svelte";
+    import ChatInputActions from "$lib/components/ChatInputActions.svelte";
     import SpaceSettingsModal from "$lib/components/SpaceSettingsModal.svelte";
     import ChevronRight from "lucide-svelte/icons/chevron-right";
     import Settings from "lucide-svelte/icons/settings";
@@ -13,7 +13,6 @@
     import Pencil from "lucide-svelte/icons/pencil";
     import Check from "lucide-svelte/icons/check";
     import X from "lucide-svelte/icons/x";
-    import Brain from "lucide-svelte/icons/brain";
 
     const client = useConvexClient();
 
@@ -34,6 +33,19 @@
     let settingsOpen = $state(false);
     let enableThinking = $state(false);
     let modelSupportsThinking = $state(false);
+    let searchProvider = $state<"off" | "perplexity" | "tavily">("off");
+    let searchPastChats = $state(false);
+    let providers = $state<{ perplexity: boolean; tavily: boolean }>({ perplexity: false, tavily: false });
+
+    import { onMount } from "svelte";
+    onMount(async () => {
+        try {
+            const p = await client.action(api.providers.getAvailable, {});
+            providers = { perplexity: p.perplexity, tavily: p.tavily };
+        } catch {
+            // Silently fail
+        }
+    });
 
     // Reset thinking toggle when model doesn't support it
     $effect(() => {
@@ -55,6 +67,14 @@
         return userPreferencesQuery.data?.defaultSearchProvider ?? "off";
     });
     let defaultSearchPastChats = $derived(userPreferencesQuery.data?.defaultSearchPastChats ?? false);
+
+    // Sync search defaults into local state
+    $effect(() => {
+        searchProvider = (defaultSearchProvider as "off" | "perplexity" | "tavily") ?? "off";
+    });
+    $effect(() => {
+        searchPastChats = defaultSearchPastChats;
+    });
 
     function getProviderColor(modelId: string): string {
         if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3") || modelId.startsWith("o4") || modelId.startsWith("chatgpt-"))
@@ -86,8 +106,8 @@
             const sessionId = await client.mutation(api.sessions.create, {
                 model: selectedModel,
                 spaceId,
-                searchProvider: defaultSearchProvider,
-                searchPastChats: defaultSearchPastChats,
+                searchProvider,
+                searchPastChats,
             });
             await client.mutation(api.messages.send, {
                 sessionId,
@@ -98,8 +118,8 @@
             client.action(api.ai.chat, {
                 sessionId,
                 model: selectedModel,
-                searchPastChats: defaultSearchPastChats,
-                searchProvider: defaultSearchProvider !== "off" ? defaultSearchProvider : undefined,
+                searchPastChats,
+                searchProvider: searchProvider !== "off" ? searchProvider : undefined,
                 enableThinking: enableThinking || undefined,
             });
             client.action(api.ai.generateTitle, { sessionId });
@@ -262,21 +282,19 @@
                     onsubmit={handleSubmit}
                 >
                     {#snippet actions()}
-                        <ModelSelector selected={selectedModel} onSelect={(m) => {
-                            client.mutation(api.spaces.update, { id: spaceId, defaultModel: m });
-                        }} bind:selectedSupportsThinking={modelSupportsThinking} />
-
-                        {#if modelSupportsThinking}
-                            <button
-                                onclick={() => (enableThinking = !enableThinking)}
-                                class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
-                                    {enableThinking ? 'bg-purple-500/15 text-purple-400' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
-                                title="Enable extended thinking"
-                            >
-                                <Brain size={14} />
-                                <span class="hidden sm:inline">Think</span>
-                            </button>
-                        {/if}
+                        <ChatInputActions
+                            model={selectedModel}
+                            onModelChange={(m) => {
+                                client.mutation(api.spaces.update, { id: spaceId, defaultModel: m });
+                            }}
+                            bind:modelSupportsThinking
+                            bind:enableThinking
+                            {searchProvider}
+                            onSearchProviderChange={(p) => (searchProvider = p)}
+                            {searchPastChats}
+                            onSearchPastChatsToggle={() => (searchPastChats = !searchPastChats)}
+                            {providers}
+                        />
                     {/snippet}
                 </ChatInput>
             </div>

@@ -2,9 +2,9 @@
     import { useConvexClient, useQuery } from "convex-svelte";
     import { api } from "$convex/_generated/api";
     import { goto } from "$app/navigation";
-    import ModelSelector from "$lib/components/ModelSelector.svelte";
     import ChatInput from "$lib/components/ChatInput.svelte";
-    import Brain from "lucide-svelte/icons/brain";
+    import ChatInputActions from "$lib/components/ChatInputActions.svelte";
+    import { onMount } from "svelte";
 
 
     const client = useConvexClient();
@@ -16,10 +16,32 @@
     let enableThinking = $state(false);
     let modelSupportsThinking = $state(false);
     let selectedModelTouched = $state(false);
+    let searchProvider = $state<"off" | "perplexity" | "tavily">("off");
+    let searchPastChats = $state(false);
+    let providers = $state<{ perplexity: boolean; tavily: boolean }>({ perplexity: false, tavily: false });
+
+    onMount(async () => {
+        try {
+            const p = await client.action(api.providers.getAvailable, {});
+            providers = { perplexity: p.perplexity, tavily: p.tavily };
+        } catch {
+            // Silently fail
+        }
+    });
 
     $effect(() => {
         if (!selectedModelTouched && userPreferencesQuery.data?.defaultModel) {
             selectedModel = userPreferencesQuery.data.defaultModel;
+        }
+    });
+
+    // Sync default search preferences
+    $effect(() => {
+        if (userPreferencesQuery.data?.defaultSearchProvider) {
+            searchProvider = (userPreferencesQuery.data.defaultSearchProvider as "off" | "perplexity" | "tavily") ?? "off";
+        }
+        if (userPreferencesQuery.data?.defaultSearchPastChats !== undefined) {
+            searchPastChats = userPreferencesQuery.data.defaultSearchPastChats;
         }
     });
 
@@ -31,24 +53,22 @@
     async function handleSubmit() {
         if (!prompt.trim() || submitting) return;
         const userMessage = prompt.trim();
-        const defaultSearchProvider = userPreferencesQuery.data?.defaultSearchProvider ?? "off";
-        const defaultSearchPastChats = userPreferencesQuery.data?.defaultSearchPastChats ?? false;
         prompt = "";
         submitting = true;
 
         try {
             const sessionId = await client.mutation(api.sessions.create, {
                 model: selectedModel,
-                searchProvider: defaultSearchProvider,
-                searchPastChats: defaultSearchPastChats,
+                searchProvider,
+                searchPastChats,
             });
             await client.mutation(api.messages.send, { sessionId, content: userMessage, model: selectedModel });
             goto(`/chat/${sessionId}`);
             client.action(api.ai.chat, {
                 sessionId,
                 model: selectedModel,
-                searchPastChats: defaultSearchPastChats,
-                searchProvider: defaultSearchProvider !== "off" ? defaultSearchProvider : undefined,
+                searchPastChats,
+                searchProvider: searchProvider !== "off" ? searchProvider : undefined,
                 enableThinking: enableThinking || undefined,
             });
             client.action(api.ai.generateTitle, { sessionId });
@@ -67,34 +87,29 @@
     <!-- Content — vertically centered, biased toward bottom like Perplexity -->
     <div class="flex-1 flex flex-col items-center justify-end px-4 sm:px-10 pb-[15vh]">
         <div class="max-w-3xl w-full">
-            <div class="mb-10">
-                <h1 class="text-4xl sm:text-5xl font-serif text-eg-text font-medium tracking-tight mb-3">
-                    Where knowledge begins
+            <div class="mb-10 text-center">
+                <h1 class="text-4xl sm:text-5xl font-serif text-eg-text font-medium tracking-tight">
+                    evergood
                 </h1>
-                <p class="text-lg text-eg-text-secondary">
-                    Start a conversation with AI — powered by multiple providers.
-                </p>
             </div>
 
             <!-- Input -->
             <ChatInput bind:value={prompt} disabled={submitting} onsubmit={handleSubmit}>
                 {#snippet actions()}
-                    <ModelSelector selected={selectedModel} onSelect={(m) => {
-                        selectedModelTouched = true;
-                        selectedModel = m;
-                    }} bind:selectedSupportsThinking={modelSupportsThinking} />
-
-                    {#if modelSupportsThinking}
-                        <button
-                            onclick={() => (enableThinking = !enableThinking)}
-                            class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors
-                                {enableThinking ? 'bg-purple-500/15 text-purple-400' : 'text-eg-text-tertiary hover:text-eg-text-secondary hover:bg-eg-bg-tertiary'}"
-                            title="Enable extended thinking"
-                        >
-                            <Brain size={14} />
-                            <span class="hidden sm:inline">Think</span>
-                        </button>
-                    {/if}
+                    <ChatInputActions
+                        model={selectedModel}
+                        onModelChange={(m) => {
+                            selectedModelTouched = true;
+                            selectedModel = m;
+                        }}
+                        bind:modelSupportsThinking
+                        bind:enableThinking
+                        {searchProvider}
+                        onSearchProviderChange={(p) => (searchProvider = p)}
+                        {searchPastChats}
+                        onSearchPastChatsToggle={() => (searchPastChats = !searchPastChats)}
+                        {providers}
+                    />
                 {/snippet}
             </ChatInput>
 

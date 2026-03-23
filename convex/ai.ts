@@ -353,10 +353,12 @@ export const tempChat = action({
         content: v.string(),
       })
     ),
+    searchProvider: v.optional(v.string()),
+    enableThinking: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
-    { model, messages }
+    { model, messages, searchProvider, enableThinking }
   ): Promise<{
     content: string;
     inputTokens: number;
@@ -367,7 +369,50 @@ export const tempChat = action({
 
     const modelRouting = inferModelRouting(model);
 
-    const systemContent = "You are a helpful AI assistant.";
+    let systemContent = "You are a helpful AI assistant.";
+
+    // Web search augmentation (if enabled)
+    if (searchProvider && searchProvider !== "off" && messages.length > 0) {
+      const lastUserMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === "user");
+
+      if (lastUserMessage) {
+        try {
+          if (searchProvider === "perplexity") {
+            const searchResult = await ctx.runAction(
+              api.search.perplexity.search,
+              { query: lastUserMessage.content, model: "sonar" }
+            );
+            if (searchResult.citations.length > 0) {
+              systemContent +=
+                "\n\n## Web Search Results (via Perplexity)\n" +
+                "Use the following web search results to inform your answer. " +
+                "Cite sources using [1], [2], etc. format.\n\n" +
+                searchResult.content;
+            }
+          } else if (searchProvider === "tavily") {
+            const searchResult = await ctx.runAction(
+              api.search.tavily.search,
+              { query: lastUserMessage.content }
+            );
+            if (searchResult.results.length > 0) {
+              systemContent +=
+                "\n\n## Web Search Results (via Tavily)\n" +
+                "Use the following web search results to inform your answer. " +
+                "Cite sources using [1], [2], etc. format.\n\n";
+              for (let i = 0; i < searchResult.results.length; i++) {
+                const r = searchResult.results[i];
+                systemContent += `[${i + 1}] ${r.title}\n${r.url}\n${r.content}\n\n`;
+              }
+            }
+          }
+        } catch {
+          // Silently skip if web search fails
+        }
+      }
+    }
+
     const result = await callLLMNonStreaming(
       modelRouting,
       systemContent,

@@ -5,11 +5,11 @@
 	import type { TempMessage } from '$lib/stores/tempChat.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
+	import ChatInputActions from '$lib/components/ChatInputActions.svelte';
 	import TokenCostBar from '$lib/components/TokenCostBar.svelte';
 	import TempChatBanner from '$lib/components/TempChatBanner.svelte';
-	import ModelSelector from '$lib/components/ModelSelector.svelte';
+	import DebugPanel from '$lib/components/DebugPanel.svelte';
 	import { tick, onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 
 	const client = useConvexClient();
 	const userPreferencesQuery = useQuery(api.userPreferences.get, () => ({}));
@@ -19,10 +19,22 @@
 	let errorMessage = $state('');
 	let messagesContainer: HTMLDivElement | undefined = $state(undefined);
 	let tempChatReady = $state(false);
+	let enableThinking = $state(false);
+	let modelSupportsThinking = $state(false);
+	let searchProvider = $state<'off' | 'perplexity' | 'tavily'>('off');
+	let searchPastChats = $state(false);
+	let debugOpen = $state(false);
+	let providers = $state<{ perplexity: boolean; tavily: boolean }>({ perplexity: false, tavily: false });
 
-	onMount(() => {
+	onMount(async () => {
 		tempChatStore.init();
 		tempChatReady = true;
+		try {
+			const p = await client.action(api.providers.getAvailable, {});
+			providers = { perplexity: p.perplexity, tavily: p.tavily };
+		} catch {
+			// Silently fail
+		}
 	});
 
 	$effect(() => {
@@ -64,6 +76,11 @@
 		}
 	});
 
+	// Reset thinking toggle when model doesn't support it
+	$effect(() => {
+		if (!modelSupportsThinking) enableThinking = false;
+	});
+
 	function handleModelChange(m: string) {
 		tempChatStore.setModel(m);
 	}
@@ -89,6 +106,8 @@
 					.filter((m: TempMessage) => !m.isStreaming && m.role !== 'assistant' || m.id !== assistantId)
 					.filter((m: TempMessage) => m.id !== assistantId)
 					.map((m: TempMessage) => ({ role: m.role, content: m.content })),
+				searchProvider: searchProvider !== 'off' ? searchProvider : undefined,
+				enableThinking: enableThinking || undefined,
 			});
 
 			tempChatStore.finishStreaming(assistantId, {
@@ -127,13 +146,6 @@
 
 <main class="flex-1 flex flex-col relative min-w-0 min-h-0 bg-eg-bg">
 	<TempChatBanner />
-
-	<!-- Toolbar -->
-	<div class="flex items-center justify-between px-4 py-3 border-b border-eg-border bg-eg-bg">
-		<div class="flex items-center gap-3">
-			<ModelSelector selected={tempChatStore.model} onSelect={handleModelChange} />
-		</div>
-	</div>
 
 	{#if totalCost > 0}
 		<div
@@ -183,6 +195,24 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if debugOpen}
+			<DebugPanel
+				messages={tempChatStore.messages.map((m) => ({
+					_id: m.id,
+					role: m.role,
+					content: m.content,
+					model: m.model,
+					inputTokens: m.inputTokens,
+					outputTokens: m.outputTokens,
+					costUsd: m.costUsd,
+					isStreaming: m.isStreaming,
+				}))}
+				searchPastChats={searchPastChats}
+				searchEnabled={searchProvider !== 'off'}
+				model={tempChatStore.model}
+			/>
+		{/if}
 	</div>
 
 	<!-- Input -->
@@ -202,7 +232,23 @@
 				disabled={sending}
 				isStreaming={tempChatStore.isStreaming}
 				onsubmit={handleSubmit}
-			/>
+			>
+				{#snippet actions()}
+					<ChatInputActions
+						model={tempChatStore.model}
+						onModelChange={handleModelChange}
+						bind:modelSupportsThinking
+						bind:enableThinking
+						{searchProvider}
+						onSearchProviderChange={(p) => (searchProvider = p)}
+						{searchPastChats}
+						onSearchPastChatsToggle={() => (searchPastChats = !searchPastChats)}
+						bind:debugOpen
+						showDebug={true}
+						{providers}
+					/>
+				{/snippet}
+			</ChatInput>
 			<div class="mt-1.5 px-1">
 				<TokenCostBar
 					inputText={prompt}
