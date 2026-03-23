@@ -14,7 +14,6 @@
     import FolderOpen from "lucide-svelte/icons/folder-open";
     import Home from "lucide-svelte/icons/home";
     import Clock from "lucide-svelte/icons/clock";
-    import LayoutGrid from "lucide-svelte/icons/layout-grid";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
 
@@ -41,11 +40,13 @@
             ? $page.url.pathname.split("/chat/")[1]
             : null,
     );
-    let isSettingsRoute = $derived($page.url.pathname.startsWith("/settings"));
+    let isSettingsRoute = $derived($page.url.pathname.startsWith("/settings") || $page.url.pathname === "/dashboard");
     const settingsNavItems = [
         { href: "/settings/general", label: "General" },
+        { href: "/settings/models", label: "Models" },
         { href: "/settings/chat-defaults", label: "Chat Defaults" },
         { href: "/settings/memory", label: "Memory & Profile" },
+        { href: "/dashboard", label: "Dashboard" },
     ];
 
     // General sessions (not in any space, not bookmarked)
@@ -214,14 +215,6 @@
                 <span>Temp Chat</span>
             </button>
 
-            <button
-                onclick={() => navigateTo("/dashboard")}
-                class="flex items-center gap-2.5 w-full px-3 py-2 text-sm rounded-lg transition-colors
-                    {$page.url.pathname === '/dashboard' ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
-            >
-                <LayoutGrid size={16} />
-                <span>Dashboard</span>
-            </button>
         </nav>
 
         {#if isSettingsRoute}
