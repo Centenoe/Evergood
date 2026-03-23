@@ -250,3 +250,72 @@ export const toggleBookmark = mutation({
     await ctx.db.patch(id, { bookmarked: !session.bookmarked });
   },
 });
+
+/**
+ * Assign a session to a space (or move between spaces). Verifies ownership of both.
+ */
+export const assignToSpace = mutation({
+  args: {
+    id: v.id("sessions"),
+    spaceId: v.id("spaces"),
+  },
+  handler: async (ctx, { id, spaceId }) => {
+    const userId = await requireAuth(ctx);
+    const session = await ctx.db.get(id);
+    if (!session) throw new Error("Session not found");
+    if (session.userId && session.userId !== userId) throw new Error("Forbidden");
+
+    const space = await ctx.db.get(spaceId);
+    if (!space || space.userId !== userId) throw new Error("Space not found");
+
+    await ctx.db.patch(id, { spaceId });
+  },
+});
+
+/**
+ * List sessions enriched with a preview of the latest message.
+ * If spaceId is provided, returns only sessions in that space.
+ */
+export const listWithPreview = query({
+  args: {
+    spaceId: v.optional(v.id("spaces")),
+  },
+  handler: async (ctx, { spaceId }) => {
+    const userId = await requireAuth(ctx);
+
+    let sessions;
+    if (spaceId !== undefined) {
+      sessions = await ctx.db
+        .query("sessions")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+        .order("desc")
+        .collect()
+        .then((s) => s.filter((sess) => sess.userId === userId));
+    } else {
+      sessions = await ctx.db
+        .query("sessions")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .order("desc")
+        .collect();
+    }
+
+    const enriched = await Promise.all(
+      sessions.map(async (session) => {
+        const lastMessages = await ctx.db
+          .query("messages")
+          .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+          .order("desc")
+          .take(1);
+
+        const lastMsg = lastMessages[0];
+        const preview = lastMsg
+          ? lastMsg.content.slice(0, 150)
+          : null;
+
+        return { ...session, preview };
+      }),
+    );
+
+    return enriched;
+  },
+});

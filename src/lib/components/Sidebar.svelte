@@ -14,6 +14,7 @@
     import FolderOpen from "lucide-svelte/icons/folder-open";
     import Home from "lucide-svelte/icons/home";
     import Clock from "lucide-svelte/icons/clock";
+    import History from "lucide-svelte/icons/history";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
 
@@ -186,6 +187,15 @@
             >
                 <Home size={16} />
                 <span>Home</span>
+            </button>
+
+            <button
+                onclick={() => navigateTo("/history")}
+                class="flex items-center gap-2.5 w-full px-3 py-2 text-sm rounded-lg transition-colors
+                    {$page.url.pathname === '/history' ? 'bg-eg-bg-tertiary text-eg-text font-medium' : 'text-eg-text-secondary hover:text-eg-text hover:bg-eg-bg-tertiary'}"
+            >
+                <History size={16} />
+                <span>History</span>
             </button>
 
             <button

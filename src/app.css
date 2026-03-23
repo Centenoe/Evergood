@@ -35,14 +35,58 @@ html, body {
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--eg-border);
-  border-radius: 3px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--eg-text-tertiary) 45%, transparent) transparent;
 }
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--eg-text-tertiary) 38%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--eg-text-tertiary);
+  background: color-mix(in srgb, var(--eg-text-secondary) 58%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.eg-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--eg-text-tertiary) 45%, transparent) transparent;
+}
+
+.eg-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.eg-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.eg-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--eg-text-tertiary) 38%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.eg-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--eg-text-secondary) 58%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 /* Selection */
